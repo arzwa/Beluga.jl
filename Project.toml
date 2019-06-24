@@ -1,0 +1,4 @@
+name = "Beluga"
+uuid = "54089656-9653-11e9-3cd0-3b3de27a7aaa"
+authors = ["Arthur ZWAENEPOEL <arzwa@psb.ugent.be>"]
+version = "0.1.0"
