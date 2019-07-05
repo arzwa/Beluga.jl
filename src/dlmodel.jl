@@ -1,6 +1,6 @@
 using Distributions
 import Distributions: _logpdf, _rand!, insupport
-#using BirthDeathProcesses
+using BirthDeathProcesses
 using PhyloTrees
 import PhyloTrees: isleaf, childnodes, parentdist
 
@@ -10,6 +10,7 @@ insupport(d::GeneFamilyCTMC, x::AbstractVector) = all(x .> 0)
 isleaf(d::GeneFamilyCTMC, n::Int64) = isleaf(d.tree, n)
 childnodes(d::GeneFamilyCTMC, n::Int64) = childnodes(d.tree, n)
 parentdist(d::GeneFamilyCTMC, n::Int64) = parentdist(d.tree, n)
+Base.length(t::Arboreal) = length(t.tree.nodes)
 
 function leafmap(tree::Arboreal)
     d = Dict{Int64,Int64}()
@@ -24,26 +25,30 @@ end
 # and μ arrays, an array of BDP distributions
 struct DLModel{T<:Real,U<:Arboreal} <: GeneFamilyCTMC
     tree::U
-    λ::Union{T,Array{T}}
-    μ::Union{T,Array{T}}
+    b::Array{LinearBDP,1}
     ϵ::Array{T}
     porder::Array{Int64}
     leafmap::Dict{Int64,Int64}
 
-    function DLModel(tree, λ::T, μ::T) where T<:Real
+    function DLModel(tree, λ::Array{T}, μ::Array{T}) where T<:Real
         o = postorder(tree)
         l = leafmap(tree)
-        d = new{T,typeof(tree)}(tree, λ, μ, similar(o), o, l)
+        b = Array{LinearBDP,1}(undef, length(o))
+        for i in eachindex(b)
+            b[i] = LinearBDP(λ[i], μ[i])
+        end
+        d = new{T,typeof(tree)}(tree, b, similar(o), o, l)
         get_ϵ!(d)
         return d
     end
 end
 
+DLModel(tree, λ::T, μ::T) where T<:Real =
+    DLModel(tree, repeat([λ], length(tree)), repeat([μ], length(tree)))
 DLModel(tree, λ, μ) = DLModel(tree, promote(λ, μ)..., postorder(tree))
 
 # helpers for DLModel
-Base.getindex(d::DLModel, i::Int64, s::Symbol) =
-    typeof(getfield(d, s)) <: AbstractArray ? getfield(d, s)[i] : getfield(d, s)
+Base.getindex(d::DLModel, i::Int64, s::Symbol) = getfield(d.b[i], s)
 Base.getindex(d::DLModel, i::Int64) = d.leafmap[i]
 
 Base.setindex!(d::DLModel{T}, v::T, i::Int64, s::Symbol) where T<:Real =
@@ -53,6 +58,32 @@ Base.length(d::DLModel) = length(d.porder)
 constant(d::DLModel) = typeof(d.λ)<:Real
 
 # Distributions interface
+# _logpdf, intuitive
+function _logpdf(d::DLModel, x::Vector{Int64}, M::Vector{Int64})
+    P = zeros(length(d), maximum(M)+1)
+    for e in d.porder
+        if isleaf(d, e)
+            P[e, x[d[e]]] = 1.0
+        else
+            children = childnodes(d, e)
+            mx = maximum([M[c] for c in children])
+            xs = zeros(mx+1)
+            for i = 0:mx
+                p = 1.
+                for c in children
+                    p_ = 0.
+                    for j in 0:length(P[c, :])-1
+                        p_ += transitionp(d.b[c], i, j, parentdist(d, c)) * P[c, j+1]
+                    end
+                    p *= p_
+                end
+                P[e, i+1] = p
+            end
+        end
+    end
+    return P
+end
+
 # _logpdf following Csuros & Miklos
 function _logpdf(d::DLModel, x::T, M::T) where T::AbstractVector{Int64}
     L = initmatrix(d, maximum(M)+1)
@@ -96,7 +127,7 @@ function get_ϵ!(d::DLModel)
         d[e, :ϵ] = if isleaf(d, e)
             p = 0.0
         else
-            prod([ϵ_slice(d[c, :λ], d[c, :μ], parentdist(d, c), d[c, :ϵ])
+            prod([ϵ_slice(d[c, :λ], d[c, :μ], parentdist(d, c), d.ϵ[c])
                 for c in childnodes(d, e)])
         end
     end
@@ -106,9 +137,10 @@ end
     1. + (1. - ε)/(μ * (ε - 1.) * t - 1.) :
         (μ + (λ - μ)/(1. + exp((λ - μ)*t)*λ*(ε - 1.)/(μ - λ*ε)))/λ
 
-# NOTE implement for matrix s.t. we only traverse the tree once for large data
+# NOTE implement for matrix as well s.t. we only traverse the tree once for
+# large data sets
 function get_M(d::DLModel, x::AbstractVector)
-    M = initvector(d)
+    M = zeros(Int64, length(d.porder))
     for n in d.porder
         M[n] = isleaf(d, n) ? x[d[n]] : sum([M[c] for c in childnodes(d, n)])
     end
