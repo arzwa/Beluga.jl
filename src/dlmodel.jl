@@ -93,6 +93,23 @@ end
 # maybe put a hard maximum on the number of genes as well, to prevent overflows
 # etc. for large species trees...
 # FIXME not correct
+function cm_mbe(d::DLModel, x::T, M::T, hardmax=Inf) where
+        {T<:AbstractVector{Int64}}
+    mx = min(maximum(M), hardmax)
+    L = zeros(length(d.tree), mx+1)
+    for e in d.porder
+        if isleaf(d, e)
+            L[e, x[d[e]]+1] = 1.0
+        else
+            children = childnodes(d, e)
+            for i=1:M[]
+            L[e, ]
+        end
+    end
+    L
+end
+
+
 function csuros_miklos(d::DLModel, x::T, M::T, hardmax=50) where
         {T<:AbstractVector{Int64}}
     mx = min(maximum(M), hardmax)
@@ -113,7 +130,7 @@ function csuros_miklos(d::DLModel, x::T, M::T, hardmax=50) where
                 for t = 0:_m[i]  # this is 0 ... M[i-1]
                     for s = 0:_M[i]  # this is 0 ... Mi
                         if t == 0
-                            B[i, t+1, s+1] = sum([L[c, m+1] *
+                            B[i, 1, s+1] = sum([L[c, m+1] *
                                 tp(d.b[c], s, m, δ) for m=0:_M[i]])
                         elseif s == _M[i]
                             B[i, t+1, s+1] = B[i,t,s+1] * d.ϵ[c]
