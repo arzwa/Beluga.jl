@@ -41,10 +41,11 @@ DLModel(tree, λ::T, μ::T, η::T=0.9) where T<:Real = DLModel(tree, repeat([λ]
 Base.length(d::DLModel) = length(d.porder)
 Base.show(io::IO, d::DLModel) = show(io, d, (:leafmap, :porder))
 Base.getindex(d::DLModel, i::Int64, s::Symbol) = getfield(d.b[i], s)
-Base.getindex(d::DLModel, i::Int64) = d.leafmap[i]
+Base.getindex(d::DLModel, i::Int64) = d.b[i]
 Base.getindex(d::DLModel, s::Symbol) = [getfield(d.b[i], s) for i in d.porder]
 Base.setindex!(d::DLModel{T}, v::T, i::Int64, s::Symbol) where T<:Real =
     getfield(d, s)[i] = v
+leafmap(d::DLModel, e::Int64) = d.leafmap[e]
 
 # extinction probabilities
 function get_ϵ!(d::DLModel)
@@ -69,7 +70,7 @@ function pgm(d::DLModel, x::Vector{Int64}, max=50)
     P = zeros(length(d), max+1)
     for e in d.porder
         if isleaf(d, e)
-            P[e, x[d[e]]+1] = 1.0
+            P[e, leafmap(d[e])+1] = 1.0
         else
             children = childnodes(d, e)
             for i = 0:max
@@ -119,13 +120,13 @@ end
         ... =#
 
 
-function csuros_miklos(d::DLModel, x::T, M::T, hardmax=50) where
+function csuros_miklos(d::DLModel, x::T, M::T, hardmax=Inf) where
         {T<:AbstractVector{Int64}}
-    mx = min(maximum(M), hardmax)
+    mx = Int(min(maximum(M), hardmax))
     L = zeros(length(d.tree), mx+1)
     for e in d.porder
         if isleaf(d, e)
-            L[e, x[d[e]]+1] = 1.0
+            L[e, leafmap(d[e])+1] = 1.0
         else
             children = childnodes(d, e)
             _M = [M[c] for c in children]
@@ -171,6 +172,30 @@ function csuros_miklos(d::DLModel, x::T, M::T, hardmax=50) where
     end
     L
 end
+
+csuros_miklos(d, x, M)
+
+function _wstar(d::DLModel, e::Int64, mmax::Int64)
+    # compute w* (Csuros Miklos 2009)
+    p = getϕ(d[e], parentdist(d, e))
+    q = getψ(d[e], parentdist(d, e))
+    w = zeros(mmax+1, mmax+1)
+    w[1,1] = 1.
+    for m=1:mmax, n=1:m
+        w[m+1, n+1] = n == m ? (1. - p)*(1. - q)*w[m, n] :
+            q*w[m, n+1] + (1. - p)*(1. - q)*w[m, n]
+    end
+    return w
+end
+
+function csuros_miklos2(d::DLModel, x, M, hardmax=Inf)
+    # Based on Csuros & Miklos (2009) and Cecile Ane (2013)
+    mx = Int(min(maximum(M), hardmax))
+    L = zeros(length(d.tree), mx+1)
+
+end
+
+
 
 function _logpdf(d::DLModel, x::T, M::T) where {T<:AbstractVector{Int64}}
     L = csuros_miklos(d, x, M)
