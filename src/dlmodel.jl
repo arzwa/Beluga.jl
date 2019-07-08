@@ -9,6 +9,7 @@ Distributions.insupport(d::GeneFamilyCTMC, x::AbstractVector) = all(x .> 0)
 PhyloTrees.isleaf(d::GeneFamilyCTMC, n::Int64) = isleaf(d.tree, n)
 PhyloTrees.childnodes(d::GeneFamilyCTMC, n::Int64) = childnodes(d.tree, n)
 PhyloTrees.parentdist(d::GeneFamilyCTMC, n::Int64) = parentdist(d.tree, n)
+Base.length(tree::Arboreal) = length(tree.tree.nodes)
 
 # map from leaves to consecutive indices
 leafmap(tree::Arboreal) = Dict(k=>i for (i,(k,v)) in enumerate(tree.leaves))
@@ -64,16 +65,14 @@ function get_M(d::DLModel, x::AbstractVector)
 end
 
 # dpmatrix, intuitive
-function dpmatrix(d::DLModel, x::Vector{Int64}, M::Vector{Int64})
-    P = zeros(length(d), maximum(M)+1)
+function pgm(d::DLModel, x::Vector{Int64}, max=50)
+    P = zeros(length(d), max+1)
     for e in d.porder
         if isleaf(d, e)
-            P[e, x[d[e]]] = 1.0
+            P[e, x[d[e]]+1] = 1.0
         else
             children = childnodes(d, e)
-            mx = maximum([M[c] for c in children])
-            xs = zeros(mx+1)
-            for i = 0:mx
+            for i = 0:max
                 p = 1.
                 for c in children
                     p_ = 0.
@@ -101,13 +100,23 @@ function cm_mbe(d::DLModel, x::T, M::T, hardmax=Inf) where
         if isleaf(d, e)
             L[e, x[d[e]]+1] = 1.0
         else
-            children = childnodes(d, e)
-            for i=1:M[]
-            L[e, ]
+            f, g = childnodes(d, e)
+            for i=0:M[e]
+                L[e, i+1] = _conditional_lhood(L, e, f, g, d, i, M[f], M[g])
+            end
         end
     end
-    L
+    return L
 end
+
+#=function _conditional_lhood(L, e, f, g, d, n, Mf, Mg)
+    p = 0.
+    tf = parentdist(d, f)
+    for t=0:Mf
+        s = n-t
+        s > Mg ? continue : nothing
+        Bf0t = sum([L[f, m+1] * tp(d.b[f], t, m, tf) for m=0:Mf])
+        ... =#
 
 
 function csuros_miklos(d::DLModel, x::T, M::T, hardmax=50) where
