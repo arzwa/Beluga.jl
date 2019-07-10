@@ -1,5 +1,11 @@
 module Beluga
 
-greet() = print("Hello World!")
+    using Distributions
+    using BirthDeathProcesses
+    using PhyloTrees
 
-end # module
+    include("dlmodel.jl")
+
+    export
+        DLModel, get_M, get_wstar, _logpdf
+end
