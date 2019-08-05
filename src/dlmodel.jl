@@ -34,6 +34,10 @@ DLModel(Ψ::SpeciesTree, λ::Real, μ::Real, η::Real=0.9) =
 DLModel(Ψ::SpeciesTree, λ::T, μ::T, η::T) where {T<:Real} =
     DLModel(Ψ, postorder(Ψ), [LinearBDP(λ, μ) for i=1:length(Ψ)], Geometric(η))
 
+DLModel(Ψ::SpeciesTree, λ::Vector{T}, μ::Vector{T}, η::T) where {T<:Real} =
+    DLModel(Ψ, postorder(Ψ), [LinearBDP(λ[i], μ[i]) for i=1:length(λ)],
+        Geometric(η))
+
 # helpers
 function asvector(d::DLModel)
     n = length(d.b)
@@ -68,16 +72,6 @@ function get_ϵ!(d::DLModel{T}) where T<:Real
             end
         end
     end
-end
-
-# expanded profile
-function profile(d::DLModel, df::DataFrame)
-    M = zeros(Int64, size(df)[1], length(d.order))
-    for n in d.order
-        M[:, n] = isleaf(d, n) ? df[:, leafname(d, n)] :
-            sum([M[:, c] for c in childnodes(d,n)])
-    end
-    return M
 end
 
 function get_wstar(d::DLModel{T}, M::Array{Int64,N}) where {N,T<:Real}

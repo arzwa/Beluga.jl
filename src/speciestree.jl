@@ -21,8 +21,10 @@ struct SpeciesTree <: Arboreal
     bindex::BranchIndex
 end
 
-SpeciesTree(tree::Tree, leaves::Dict{Int64,String}) =
+SpeciesTree(tree::Tree, leaves::Dict{Int64,AbstractString}) =
     SpeciesTree(tree, Dict(k=>Symbol(v) for (k,v) in leaves), defaultidx(tree))
+SpeciesTree(tree::LabeledTree) = SpeciesTree(tree.tree, tree.leaves)
+SpeciesTree(treefile::String) = SpeciesTree(readtree(treefile))
 
 defaultidx(tree) = BranchIndex(i=>Dict(:θ=>i) for (i,n) in tree.nodes)
 
@@ -36,4 +38,14 @@ function set_constantrates!(Ψ::SpeciesTree, s=:θ)
     for k in keys(Ψ.bindex)
         Ψ.bindex[k, s] = 1
     end
-end 
+end
+
+# expanded profile
+function profile(Ψ::SpeciesTree, df::DataFrame)
+    M = zeros(Int64, size(df)[1], length(Ψ))
+    for n in postorder(Ψ)
+        M[:, n] = isleaf(Ψ, n) ? df[:, leafname(Ψ, n)] :
+            sum([M[:, c] for c in childnodes(Ψ,n)])
+    end
+    return M
+end
