@@ -21,7 +21,7 @@ struct SpeciesTree <: Arboreal
     bindex::BranchIndex
 end
 
-SpeciesTree(tree::Tree, leaves::Dict{Int64,AbstractString}) =
+SpeciesTree(tree::Tree, leaves::Dict{Int64,T}) where T<:AbstractString =
     SpeciesTree(tree, Dict(k=>Symbol(v) for (k,v) in leaves), defaultidx(tree))
 SpeciesTree(tree::LabeledTree) = SpeciesTree(tree.tree, tree.leaves)
 SpeciesTree(treefile::String) = SpeciesTree(readtree(treefile))

@@ -33,9 +33,9 @@ using DataFrames
 using Beluga
 
 s = SpeciesTree("../arthropods/species2.nw")
-df = CSV.read("../arthropods/ortho2.counts.tsv")
+df = CSV.read("../arthropods/ortho2.counts.tsv", delim="\t")
 deletecols!(df, :Orthogroup)
 M = profile(s, df)
 d = DLModel(s, 0.002, 0.003)
 X = M[rand(1:6000, 100),:]
-mle(d, X)
+d, out = mle(d, X)

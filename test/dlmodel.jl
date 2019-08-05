@@ -5,12 +5,8 @@ s = "(D:18.03,(C:12.06,(B:7.06,A:7.06):4.99):5.97);"
 t = SpeciesTree(read_nw(s)[1:2]...)
 d = DLModel(t, 0.2, 0.3)
 x = DataFrame(:A=>[2],:B=>[2],:C=>[3],:D=>[4])
-M = profile(d, x)
-W = get_wstar(d, M)
-
-X = [4 2 4 3; 3 1 4 3; 1 3 1 1; 4 2 1 5; 3 2 3 2]
-M_ = get_M(d, X)
-W_ = get_wstar(d, M_)
+M = profile(t, x)
+W = Beluga.get_wstar(d, M)
 
 @testset "Extended profile" begin
     @test M[1,:] == [11, 4, 7, 3, 4, 2, 2]

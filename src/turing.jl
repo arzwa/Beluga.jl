@@ -1,5 +1,6 @@
 using Turing
 using Beluga
+using PhyloTrees
 
 s = "(D:18.03,(C:12.06,(B:7.06,A:7.06):4.99):5.97);"
 df = DataFrame(:A=>[4,3,1,4,3],:B=>[2,1,3,2,2],:C=>[4,4,1,1,3],:D=>[3,3,1,5,2])
