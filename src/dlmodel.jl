@@ -31,8 +31,10 @@ end
 DLModel(Ψ::SpeciesTree, λ::Real, μ::Real, η::Real=0.9) =
     DLModel(Ψ, promote(λ, μ, η)...)
 
-DLModel(Ψ::SpeciesTree, λ::T, μ::T, η::T) where {T<:Real} =
-    DLModel(Ψ, postorder(Ψ), [LinearBDP(λ, μ) for i=1:length(Ψ)], Geometric(η))
+function DLModel(Ψ::SpeciesTree, λ::T, μ::T, η::T) where {T<:Real}
+    n = maximum([v[:θ] for (k,v) in Ψ.bindex])
+    DLModel(Ψ, postorder(Ψ), [LinearBDP(λ, μ) for i=1:n], Geometric(η))
+end
 
 DLModel(Ψ::SpeciesTree, λ::Vector{T}, μ::Vector{T}, η::T) where {T<:Real} =
     DLModel(Ψ, postorder(Ψ), [LinearBDP(λ[i], μ[i]) for i=1:length(λ)],
@@ -55,6 +57,7 @@ Base.show(io::IO, d::DLModel) = show(io, d, (:tree, :b))
 Base.length(d::DLModel) = length(d.order)
 
 # indexers, should think about what's best
+Base.getindex(d::DLModel, i::Int64) = d[i, :θ]
 Base.getindex(d::DLModel, i::Int64, j::Int64) = d.ϵ[i, j]
 Base.getindex(d::DLModel, i::Int64, s::Symbol) = d.b[d.tree.bindex[i, s]]
 Base.setindex!(d::DLModel{T}, v::T, i::Int64, j::Int64) where T<:Real =
@@ -170,7 +173,9 @@ function oib(ρ::Geometric, d::DLModel)
     left = geometric_extinctionp(d[f, 1], η)
     rght = geometric_extinctionp(d[g, 1], η)
     #1. - left - rght + root
-    (1. -left)*(1. -rght)
+    p = (1. -left)*(1. -rght)
+    p = isapprox(p, zero(p), atol=1e-12) ? zero(p) : p  # XXX had some issues
+    return p
 end
 
 geometric_extinctionp(ϵ::T, η::T) where T<:Real = η*ϵ/(1. - (1. - η)*ϵ)

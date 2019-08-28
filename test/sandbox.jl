@@ -25,17 +25,8 @@ asvector(d)
 Beluga.gradient(d, M) |> show
 
 set_constantrates!(S)
-d = DLModel(S, postorder(S), [LinearBDP(0.2, 0.3)], Geometric(0.9))
+d = DLModel(S, 0.2, 0.3, 0.9)
 gradient(d, M) |> show
 
-using CSV
-using DataFrames
-using Beluga
-
-s = SpeciesTree("../arthropods/species2.nw")
-df = CSV.read("../arthropods/ortho2.counts.tsv", delim="\t")
-deletecols!(df, :Orthogroup)
-M = profile(s, df)
 d = DLModel(s, 0.002, 0.003)
-X = M[rand(1:6000, 100),:]
-d, out = mle(d, X)
+d, out = mle(d, M[2, :])

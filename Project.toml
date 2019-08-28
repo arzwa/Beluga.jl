@@ -4,7 +4,10 @@ authors = ["Arthur ZWAENEPOEL <arzwa@psb.ugent.be>"]
 version = "0.1.0"
 
 [deps]
+BirthDeathProcesses = "306aff9e-5df6-11e9-2ccf-256e3a748119"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
+PhyloTrees = "0d4d4e69-8856-4a2e-902c-8a6c3add14ba"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

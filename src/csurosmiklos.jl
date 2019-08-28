@@ -43,8 +43,10 @@ function csuros_miklos(d::PhyloLinearBDP, M::AbstractVector, W::Array{<:Real,3})
                     # XXX is this loop as efficient as it could?
                     for n=0:_M[i+1], t=0:_M[i]
                         s = n-t
+                        p = _ϵ[i]
+                        p = isapprox(p, one(p)) ? one(p) : p  # had some problem
                         s < 0 || s > Mi ? continue : A[i,n+1] += pdf(Binomial(
-                            n, _ϵ[i]), s) * A[i-1,t+1] * B[i,t+1,s+1]
+                            n, p), s) * A[i-1,t+1] * B[i,t+1,s+1]
                     end
                     for n=0:_M[i+1]  # this is 0 ... M[i]
                         A[i,n+1] /= (1. - _ϵ[i+1])^n

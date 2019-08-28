@@ -1,4 +1,6 @@
 using Test
+using PhyloTrees
+using DataFrames
 import Beluga: csuros_miklos, integrate_root
 
 s = "(D:18.03,(C:12.06,(B:7.06,A:7.06):4.99):5.97);"
@@ -10,7 +12,6 @@ W = Beluga.get_wstar(d, M)
 
 @testset "Extended profile" begin
     @test M[1,:] == [11, 4, 7, 3, 4, 2, 2]
-    #@test M_[:, 3] == [9, 7, 5, 11, 7]
 end
 
 @testset "Extinction probabilities" begin
