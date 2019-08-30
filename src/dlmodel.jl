@@ -77,7 +77,7 @@ function get_ϵ!(d::DLModel{T}) where T<:Real
     end
 end
 
-function get_wstar(d::DLModel{T}, M::Array{Int64,N}) where {N,T<:Real}
+function get_wstar(d::DLModel{T}, M::AbstractArray{Int64,N}) where {N,T<:Real}
     mmax = maximum(M)
     w = zeros(T, mmax+1, mmax+1, maximum(d.order))
     # last dimension of w one too large, unnecessary memory...
@@ -118,8 +118,7 @@ function Distributions.logpdf(d::PhyloLinearBDP,
 end
 
 _logpdf(d::PhyloLinearBDP, M::AbstractMatrix{Int64}, W::Array{<:Real,3},
-    cond=:oib) = mapreduce(
-        (i) -> _logpdf(d, M[i,:], W, cond), +, collect(1:size(M)[1]))
+    cond=:oib) = sum(mapslices((x)->_logpdf(d, x, W, cond), M, dims=2))
 
 function _logpdf(d::DLModel, x::AbstractVector{Int64}, W::Array{<:Real,3},
         cond=:oib)
@@ -134,7 +133,9 @@ since we compute W for each vector again. It is however the only way to get
 ForwardDiff to work with the distributed approach.
 =#
 function gradient(d::PhyloLinearBDP, M::AbstractMatrix{Int64}, cond=:oib)
-    return mapreduce((i) -> gradient(d, M[i,:], cond), +, collect(1:size(M)[1]))
+    return sum(Array(mapslices((x)->gradient(d, x, cond),
+        M, dims=2)'), dims=2)[:,1]
+    #return mapreduce((i) -> gradient(d, M[i,:], cond), +, collect(1:size(M)[1]))
 end
 
 function gradient(d::DLModel, x::AbstractVector{Int64}, cond=:oib)

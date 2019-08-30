@@ -30,7 +30,7 @@ end
     @test W[:,:,2][6,2] ≈ 0.0
 end
 
-@testset "Log-likelihood ~ Csuros & Miklos" begin
+@testset "DLModel, Log-likelihood ~ Csuros & Miklos" begin
     shouldbe = [-Inf, -13.0321, -10.2906, -8.96844, -8.41311, -8.38041,
         -8.78481, -9.5921, -10.8016, -12.4482, -14.6268, -17.607]
     L = csuros_miklos(d, M[1,:], W)[1,:]
