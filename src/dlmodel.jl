@@ -57,6 +57,7 @@ Base.show(io::IO, d::DLModel) = show(io, d, (:tree, :b))
 Base.length(d::DLModel) = length(d.order)
 
 # indexers, should think about what's best
+rateindex(d::DLModel, branch::Int64) = d.tree.bindex[branch]
 Base.getindex(d::DLModel, i::Int64) = d[i, :θ]
 Base.getindex(d::DLModel, i::Int64, j::Int64) = d.ϵ[i, j]
 Base.getindex(d::DLModel, i::Int64, s::Symbol) = d.b[d.tree.bindex[i, s]]
@@ -77,6 +78,7 @@ function get_ϵ!(d::DLModel{T}) where T<:Real
     end
 end
 
+# XXX should implement partial recomputation !
 function get_wstar(d::DLModel{T}, M::AbstractArray{Int64,N}) where {N,T<:Real}
     mmax = maximum(M)
     w = zeros(T, mmax+1, mmax+1, maximum(d.order))
