@@ -19,10 +19,12 @@ struct SpeciesTree <: Arboreal
     tree::Tree
     leaves::Dict{Int64,Symbol}
     bindex::BranchIndex
+    order::Array{Int64,1}
 end
 
 SpeciesTree(tree::Tree, leaves::Dict{Int64,T}) where T<:AbstractString =
-    SpeciesTree(tree, Dict(k=>Symbol(v) for (k,v) in leaves), defaultidx(tree))
+    SpeciesTree(tree, Dict(k=>Symbol(v) for (k,v) in leaves), defaultidx(tree),
+        postorder(tree))
 SpeciesTree(tree::LabeledTree) = SpeciesTree(tree.tree, tree.leaves)
 SpeciesTree(treefile::String) = SpeciesTree(readtree(treefile))
 
@@ -43,7 +45,7 @@ end
 # expanded profile
 function profile(Ψ::SpeciesTree, df::DataFrame)
     M = zeros(Int64, size(df)[1], length(Ψ))
-    for n in postorder(Ψ)
+    for n in Ψ.order
         M[:, n] = isleaf(Ψ, n) ? df[:, leafname(Ψ, n)] :
             sum([M[:, c] for c in childnodes(Ψ,n)])
     end

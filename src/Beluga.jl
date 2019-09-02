@@ -6,6 +6,7 @@ module Beluga
     using DataFrames
     using ForwardDiff
     using Optim
+    using StatsBase
 
     include("speciestree.jl")
     include("dlmodel.jl")

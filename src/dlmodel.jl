@@ -1,16 +1,15 @@
 # DLModel
 struct DLModel{T<:Real,Ψ<:Arboreal} <: PhyloLinearBDP
     tree::Ψ
-    order::Array{Int64,1}
     b::Array{LinearBDP{T},1}
     ϵ::Array{T,2}  # extinction probabilities at beginning and end of branch
     ρ::DiscreteUnivariateDistribution  # distribution at root
 end
 
 # constructors
-function DLModel(Ψ::SpeciesTree, o::Array{Int64,1}, b::Array{LinearBDP{T},1},
+function DLModel(Ψ::SpeciesTree, b::Array{LinearBDP{T},1},
         ρ::DiscreteUnivariateDistribution) where T<:Real
-    d = DLModel{T,SpeciesTree}(Ψ, o, b, ones(T, length(o), 2), ρ)
+    d = DLModel{T,SpeciesTree}(Ψ, b, ones(T, length(Ψ.order), 2), ρ)
     get_ϵ!(d)
     return d
 end
@@ -19,12 +18,12 @@ function DLModel(d::DLModel, x::Vector{<:Real})
     n = length(x) ÷ 2
     if n == 1
         b = [LinearBDP(x[1], x[2])]
-        return DLModel(d.tree, d.order, b, d.ρ)
+        return DLModel(d.tree, b, d.ρ)
     else
         λ = x[1:n]
         μ = x[n+1:end]
         b = [LinearBDP(λ[i], μ[i]) for i in 1:n]
-        return DLModel(d.tree, d.order, b, d.ρ)
+        return DLModel(d.tree, b, d.ρ)
     end
 end
 
@@ -33,18 +32,17 @@ DLModel(Ψ::SpeciesTree, λ::Real, μ::Real, η::Real=0.9) =
 
 function DLModel(Ψ::SpeciesTree, λ::T, μ::T, η::T) where {T<:Real}
     n = maximum([v[:θ] for (k,v) in Ψ.bindex])
-    DLModel(Ψ, postorder(Ψ), [LinearBDP(λ, μ) for i=1:n], Geometric(η))
+    DLModel(Ψ, [LinearBDP(λ, μ) for i=1:n], Geometric(η))
 end
 
 DLModel(Ψ::SpeciesTree, λ::Vector{T}, μ::Vector{T}, η::T) where {T<:Real} =
-    DLModel(Ψ, postorder(Ψ), [LinearBDP(λ[i], μ[i]) for i=1:length(λ)],
-        Geometric(η))
+    DLModel(Ψ, [LinearBDP(λ[i], μ[i]) for i=1:length(λ)], Geometric(η))
 
 # helpers
 function asvector(d::DLModel)
     n = length(d.b)
     x = zeros(2n)
-    for e in d.order
+    for e in d.tree.order
         i = d.tree.bindex[e, :θ]
         p = d[e, :θ]
         x[i] = p.λ
@@ -54,7 +52,7 @@ function asvector(d::DLModel)
 end
 
 Base.show(io::IO, d::DLModel) = show(io, d, (:tree, :b))
-Base.length(d::DLModel) = length(d.order)
+Base.length(d::DLModel) = length(d.tree.order)
 
 # indexers, should think about what's best
 rateindex(d::DLModel, branch::Int64) = d.tree.bindex[branch]
@@ -66,7 +64,7 @@ Base.setindex!(d::DLModel{T}, v::T, i::Int64, j::Int64) where T<:Real =
 
 # extinction probabilities
 function get_ϵ!(d::DLModel{T}) where T<:Real
-    for e in d.order
+    for e in d.tree.order
         if isleaf(d, e)
             d[e, 2] = zero(T)
         else
@@ -81,9 +79,9 @@ end
 # XXX should implement partial recomputation !
 function get_wstar(d::DLModel{T}, M::AbstractArray{Int64,N}) where {N,T<:Real}
     mmax = maximum(M)
-    w = zeros(T, mmax+1, mmax+1, maximum(d.order))
+    w = zeros(T, mmax+1, mmax+1, maximum(d.tree.order))
     # last dimension of w one too large, unnecessary memory...
-    for i in d.order[1:end-1]
+    for i in d.tree.order[1:end-1]
         w[:, :, i] = _wstar(d, i, mmax)
     end
     return w
@@ -124,7 +122,7 @@ _logpdf(d::PhyloLinearBDP, M::AbstractMatrix{Int64}, W::Array{<:Real,3},
 
 function _logpdf(d::DLModel, x::AbstractVector{Int64}, W::Array{<:Real,3},
         cond=:oib)
-    root = d.order[end]
+    root = d.tree.order[end]
     L = csuros_miklos(d, x, W)[root, :]
     L = integrate_root(L, d.ρ, d, root)
     return condition(L, d, cond)
@@ -169,7 +167,7 @@ function integrate_root(L::Array{<:Real,1}, ρ::Geometric, d::DLModel, e::Int64)
 end
 
 function oib(ρ::Geometric, d::DLModel)
-    e = d.order[end]
+    e = d.tree.order[end]
     η = ρ.p
     f, g  = childnodes(d.tree, e)
     #root = geometric_extinctionp(d[e, 2], η)
