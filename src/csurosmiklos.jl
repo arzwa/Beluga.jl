@@ -14,7 +14,7 @@ function csuros_miklos(d::PhyloLinearBDP, M::AbstractVector, W::Array{<:Real,3})
         L .= NaN
         return L
     end
-    for e in d.order
+    for e in d.tree.order
         if isleaf(d, e)
             L[e, M[e]+1] = 1.0
         else
@@ -27,7 +27,7 @@ function csuros_miklos(d::PhyloLinearBDP, M::AbstractVector, W::Array{<:Real,3})
             for i = 1:length(children)
                 c = children[i]
                 Mi = Mc[i]
-                B[i, 1, :] = W[1:mx+1, 1:mx+1, c] * L[c, :]  # correct I believe
+                B[i, 1, :] = W[1:mx+1, 1:mx+1, c] * L[c, :] 
                 for t=1:_M[i], s=0:Mi  # this is 0...M[i-1] & 0...Mi
                     if s == Mi
                         B[i,t+1,s+1] = B[i,t,s+1] * d[c,1]
@@ -57,6 +57,12 @@ function csuros_miklos(d::PhyloLinearBDP, M::AbstractVector, W::Array{<:Real,3})
                 L[e, n+1] = A[end, n+1]
             end
         end
+    end
+    b = L .< 0
+    if any(b)
+        # this shouldn't occur...
+        @warn "Negative values in 'csuros_miklos' ⇒ set to zero()"
+        L[b] .= zero(L[1])
     end
     log.(L)
 end

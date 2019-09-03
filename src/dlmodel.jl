@@ -1,16 +1,21 @@
 # DLModel
+# We keep ϵ and W in the model struct, as they only change when λ or μ change; 
 struct DLModel{T<:Real,Ψ<:Arboreal} <: PhyloLinearBDP
     tree::Ψ
     b::Array{LinearBDP{T},1}
-    ϵ::Array{T,2}  # extinction probabilities at beginning and end of branch
     ρ::DiscreteUnivariateDistribution  # distribution at root
+    ϵ::Array{T,2}  # extinction probabilities at beginning and end of branch
+    W::Array{T,3}  # auxiliary matrix Csuros & Miklos algorithm
+    max::Int64
 end
 
 # constructors
-function DLModel(Ψ::SpeciesTree, b::Array{LinearBDP{T},1},
+function DLModel(Ψ::SpeciesTree, mmax::Int64, b::Array{LinearBDP{T},1},
         ρ::DiscreteUnivariateDistribution) where T<:Real
-    d = DLModel{T,SpeciesTree}(Ψ, b, ones(T, length(Ψ.order), 2), ρ)
+    W = zeros(T, mmax+1, mmax+1, maximum(Ψ.order))
+    d = DLModel{T,SpeciesTree}(Ψ, b, ρ, ones(T, length(Ψ.order), 2), W, mmax)
     get_ϵ!(d)
+    get_wstar!(d, mmax)
     return d
 end
 
@@ -18,25 +23,26 @@ function DLModel(d::DLModel, x::Vector{<:Real})
     n = length(x) ÷ 2
     if n == 1
         b = [LinearBDP(x[1], x[2])]
-        return DLModel(d.tree, b, d.ρ)
+        return DLModel(d.tree, d.max, b, d.ρ)
     else
         λ = x[1:n]
         μ = x[n+1:end]
         b = [LinearBDP(λ[i], μ[i]) for i in 1:n]
-        return DLModel(d.tree, b, d.ρ)
+        return DLModel(d.tree, d.max, b, d.ρ)
     end
 end
 
-DLModel(Ψ::SpeciesTree, λ::Real, μ::Real, η::Real=0.9) =
-    DLModel(Ψ, promote(λ, μ, η)...)
+DLModel(Ψ::SpeciesTree, mmax::Int64, λ::Real, μ::Real, η::Real=0.9) =
+    DLModel(Ψ, mmax, promote(λ, μ, η)...)
 
-function DLModel(Ψ::SpeciesTree, λ::T, μ::T, η::T) where {T<:Real}
+function DLModel(Ψ::SpeciesTree, mmax::Int64, λ::T, μ::T, η::T) where {T<:Real}
     n = maximum([v[:θ] for (k,v) in Ψ.bindex])
-    DLModel(Ψ, [LinearBDP(λ, μ) for i=1:n], Geometric(η))
+    DLModel(Ψ, mmax, [LinearBDP(λ, μ) for i=1:n], Geometric(η))
 end
 
-DLModel(Ψ::SpeciesTree, λ::Vector{T}, μ::Vector{T}, η::T) where {T<:Real} =
-    DLModel(Ψ, [LinearBDP(λ[i], μ[i]) for i=1:length(λ)], Geometric(η))
+DLModel(Ψ::SpeciesTree, mmax::Int64, λ::Vector{T}, μ::Vector{T},
+    η::T) where {T<:Real} = DLModel(Ψ, mmax, [LinearBDP(λ[i], μ[i]) for
+        i=1:length(λ)], Geometric(η))
 
 # helpers
 function asvector(d::DLModel)
@@ -77,14 +83,12 @@ function get_ϵ!(d::DLModel{T}) where T<:Real
 end
 
 # XXX should implement partial recomputation !
-function get_wstar(d::DLModel{T}, M::AbstractArray{Int64,N}) where {N,T<:Real}
-    mmax = maximum(M)
-    w = zeros(T, mmax+1, mmax+1, maximum(d.tree.order))
+# note that wstar only requires the maximum of the profile
+function get_wstar!(d::DLModel{T}, mmax::Int64) where {N,T<:Real}
     # last dimension of w one too large, unnecessary memory...
     for i in d.tree.order[1:end-1]
-        w[:, :, i] = _wstar(d, i, mmax)
+        d.W[:, :, i] = _wstar(d, i, mmax)
     end
-    return w
 end
 
 function _wstar(d::DLModel{T}, e::Int64, mmax::Int64) where {T<:Real}
@@ -107,23 +111,20 @@ end
 # note these are (should be) more general than DLModel
 function Distributions.logpdf(d::PhyloLinearBDP,
         M::AbstractMatrix{Int64}, cond=:oib)
-    W = get_wstar(d, M)
-    return _logpdf(d, M, W, cond)
+    return _logpdf(d, M, cond)
 end
 
 function Distributions.logpdf(d::PhyloLinearBDP,
         M::AbstractVector{Int64}, cond=:oib)
-    W = get_wstar(d, M)
-    return _logpdf(d, M, W, cond)
+    return _logpdf(d, M, cond)
 end
 
-_logpdf(d::PhyloLinearBDP, M::AbstractMatrix{Int64}, W::Array{<:Real,3},
-    cond=:oib) = sum(mapslices((x)->_logpdf(d, x, W, cond), M, dims=2))
+_logpdf(d::PhyloLinearBDP, M::AbstractMatrix{Int64}, cond=:oib) =
+    sum(mapslices((x)->_logpdf(d, x, cond), M, dims=2))
 
-function _logpdf(d::DLModel, x::AbstractVector{Int64}, W::Array{<:Real,3},
-        cond=:oib)
+function _logpdf(d::DLModel, x::AbstractVector{Int64}, cond=:oib)
     root = d.tree.order[end]
-    L = csuros_miklos(d, x, W)[root, :]
+    L = csuros_miklos(d, x, d.W)[root, :]
     L = integrate_root(L, d.ρ, d, root)
     return condition(L, d, cond)
 end

@@ -42,6 +42,9 @@ function set_constantrates!(Ψ::SpeciesTree, s=:θ)
     end
 end
 
+hasconstantrates(Ψ::SpeciesTree, s=:θ) =
+    all([Ψ.bindex[s, i]==1 for i=1:Ψ.order])
+
 # expanded profile
 function profile(Ψ::SpeciesTree, df::DataFrame)
     M = zeros(Int64, size(df)[1], length(Ψ))
