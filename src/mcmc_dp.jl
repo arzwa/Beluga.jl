@@ -6,7 +6,7 @@ abstract type Proposal end
 const State = Dict{Symbol,Union{Vector{<:Real},<:Real}}
 const Proposals = Dict{Symbol,Union{Vector{<:Proposal},<:Proposal}}
 
-mutable struct MixturePhyloBDPChain{T<:Model,V<:DLModel}
+mutable struct MixturePhyloBDPChain{T<:Model,V<:DLModel} <: Chain
     tree::SpeciesTree
     state::State
     bdps::Array{V,1}
@@ -16,10 +16,10 @@ mutable struct MixturePhyloBDPChain{T<:Model,V<:DLModel}
     trace::Array
 end
 
-Base.getindex(c::PhyloBDPChain, s::Symbol) = c.state[s]
-Base.getindex(c::PhyloBDPChain, s::Symbol, i::Int64) = c.state[s][i]
-Base.setindex!(c::PhyloBDPChain, v, s::Symbol) = c.state[s] = v
-Base.setindex!(c::PhyloBDPChain, v, s::Symbol, i::Int64) = c.state[s][i] = v
+Base.getindex(c::Chain, s::Symbol) = c.state[s]
+Base.getindex(c::Chain, s::Symbol, i::Int64) = c.state[s][i]
+Base.setindex!(c::Chain, v, s::Symbol) = c.state[s] = v
+Base.setindex!(c::Chain, v, s::Symbol, i::Int64) = c.state[s][i] = v
 
 mutable struct AdaptiveRWProposal <: Proposal
     accepted::Int64
@@ -49,10 +49,10 @@ function init(d::ConstantDPModel, t::SpeciesTree, X::Matrix{Int64}, k=3)
     bdps = [DLModel(t, mmax, x[1, i], x[2, i]) for i=1:k]
     prop = [Proposals(:θ => AdaptiveRWProposal(0, 20, Normal(0., 0.05)))
         for i=1:k]
-    PhyloBDPChain(t, s, bdps, d, prop, 0, [])
+    MixturePhyloBDPChain(t, s, bdps, d, prop, 0, [])
 end
 
-function mcmc!(chain::PhyloBDPChain{T,V}, n=1000;
+function mcmc!(chain::MixturePhyloBDPChain{T,V}, n=1000;
         show_trace=true, show_every=10,) where {T<:ConstantDPModel,V<:DLModel}
     for i=1:n
         operator_switchmode_constantrates_nowgd!(M, chain);

@@ -1,10 +1,10 @@
-using Test
 using CSV
 using DataFrames
 using Beluga
 using StatsBase
 using Distributions
 using Plots
+using JLD
 
 s = SpeciesTree("test/data/tree1.nw")
 Beluga.set_constantrates!(s)
@@ -23,3 +23,5 @@ p1 = plot(l[100:end, :], labels=[:l1, :l2, :m1, :m2]);
 p2 = scatter(1:1000, [d[1] for d in chain.trace], color="black",
     alpha=0.5, markersize=1, legend=false;)
 plot(p1, p2, size=(900,300))
+
+save("chain.jld", "chain", chain)
