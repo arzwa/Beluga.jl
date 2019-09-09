@@ -7,6 +7,7 @@ module Beluga
     using ForwardDiff
     using Optim
     using StatsBase
+    using AdaptiveMCMC
 
     include("speciestree.jl")
     include("dlmodel.jl")

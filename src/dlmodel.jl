@@ -1,5 +1,5 @@
 # DLModel
-# We keep ϵ and W in the model struct, as they only change when λ or μ change; 
+# We keep ϵ and W in the model struct, as they only change when λ or μ change;
 struct DLModel{T<:Real,Ψ<:Arboreal} <: PhyloLinearBDP
     tree::Ψ
     b::Array{LinearBDP{T},1}
@@ -84,9 +84,10 @@ end
 
 # XXX should implement partial recomputation !
 # note that wstar only requires the maximum of the profile
-function get_wstar!(d::DLModel{T}, mmax::Int64) where {N,T<:Real}
+function get_wstar!(d::DLModel{T}, mmax::Int, node::Int=-1) where {N,T<:Real}
     # last dimension of w one too large, unnecessary memory...
-    for i in d.tree.order[1:end-1]
+    order = node == -1 ? d.tree.order : parentbranches(d.tree, node)
+    for i in order[1:end-1]  # excluding root node
         d.W[:, :, i] = _wstar(d, i, mmax)
     end
 end
