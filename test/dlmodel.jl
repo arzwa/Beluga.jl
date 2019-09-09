@@ -45,3 +45,7 @@ end
     L = csuros_miklos(d, M[1,:], d.W)
     @test integrate_root(L[1,:], d.ρ, d, 1) ≈ -14.38233786
 end
+
+@testset "Partial recomputation" begin
+
+end

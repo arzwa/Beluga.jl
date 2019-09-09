@@ -10,6 +10,13 @@ struct DLModel{T<:Real,Ψ<:Arboreal} <: PhyloLinearBDP
 end
 
 # constructors
+DLModel(Ψ::SpeciesTree, mmax::Int64, λ::Vector{T}, μ::Vector{T},
+    η::T) where {T<:Real} = DLModel(Ψ, mmax, [LinearBDP(λ[i], μ[i]) for
+        i=1:length(λ)], Geometric(η))
+
+DLModel(Ψ::SpeciesTree, mmax::Int64, λ::Real, μ::Real, η::Real=0.9) =
+    DLModel(Ψ, mmax, promote(λ, μ, η)...)
+
 function DLModel(Ψ::SpeciesTree, mmax::Int64, b::Array{LinearBDP{T},1},
         ρ::DiscreteUnivariateDistribution) where T<:Real
     W = zeros(T, mmax+1, mmax+1, maximum(Ψ.order))
@@ -17,6 +24,11 @@ function DLModel(Ψ::SpeciesTree, mmax::Int64, b::Array{LinearBDP{T},1},
     get_ϵ!(d)
     get_wstar!(d, mmax)
     return d
+end
+
+function DLModel(Ψ::SpeciesTree, mmax::Int64, λ::T, μ::T, η::T) where {T<:Real}
+    n = maximum([v[:θ] for (k,v) in Ψ.bindex])
+    DLModel(Ψ, mmax, [LinearBDP(λ, μ) for i=1:n], Geometric(η))
 end
 
 function DLModel(d::DLModel, x::Vector{<:Real})
@@ -31,18 +43,6 @@ function DLModel(d::DLModel, x::Vector{<:Real})
         return DLModel(d.tree, d.max, b, d.ρ)
     end
 end
-
-DLModel(Ψ::SpeciesTree, mmax::Int64, λ::Real, μ::Real, η::Real=0.9) =
-    DLModel(Ψ, mmax, promote(λ, μ, η)...)
-
-function DLModel(Ψ::SpeciesTree, mmax::Int64, λ::T, μ::T, η::T) where {T<:Real}
-    n = maximum([v[:θ] for (k,v) in Ψ.bindex])
-    DLModel(Ψ, mmax, [LinearBDP(λ, μ) for i=1:n], Geometric(η))
-end
-
-DLModel(Ψ::SpeciesTree, mmax::Int64, λ::Vector{T}, μ::Vector{T},
-    η::T) where {T<:Real} = DLModel(Ψ, mmax, [LinearBDP(λ[i], μ[i]) for
-        i=1:length(λ)], Geometric(η))
 
 # helpers
 function asvector(d::DLModel)
@@ -84,10 +84,9 @@ end
 
 # XXX should implement partial recomputation !
 # note that wstar only requires the maximum of the profile
-function get_wstar!(d::DLModel{T}, mmax::Int, node::Int=-1) where {N,T<:Real}
+function get_wstar!(d::DLModel{T}, mmax::Int) where {N,T<:Real}
     # last dimension of w one too large, unnecessary memory...
-    order = node == -1 ? d.tree.order : parentbranches(d.tree, node)
-    for i in order[1:end-1]  # excluding root node
+    for i in d.tree.order[1:end-1]  # excluding root node
         d.W[:, :, i] = _wstar(d, i, mmax)
     end
 end
