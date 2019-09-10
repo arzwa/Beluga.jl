@@ -26,13 +26,25 @@ struct ConstantDPModel{T<:Real} <: Model
     ConstantDPModel(d::MvLogNormal, α::T) where T<:Real = new{T}(G0, α)
 end
 
+function Base.rand(m::ConstantDPModel)
+    x = rand(m.G0)
+    n = length(x)÷2
+    return x[1:n], x[n+1:end]
+end
+
+function Base.rand(m::ConstantDPModel, i::Int)
+    x = rand(m.G0, i)
+    n = size(x)[1]÷2
+    return x[1:n,:], x[n+1:end,:]
+end
+
 function init(d::ConstantDPModel, t::SpeciesTree, X::Matrix{Int64}, k=3)
     x = rand(d.G0, k)
     mmax = maximum(X)
     z = rand(1:k, size(X)[1])
     n = length(t)
     λ = x[1:n,:] ; μ = x[n+1:end,:]
-    s = State(:λ => λ, :μ => μ, :z => z, :K => k, :n =>counts(z,1:k))
+    s = State(:λ =>λ, :μ =>μ, :z =>z, :K=>k, :n=>counts(z,1:k), :logp=>-Inf)
     bdps = [DLModel(t, mmax, λ[:,i], μ[:,i], 0.8) for i=1:k]
     prop = [Proposals(:θ => [AdaptiveUnProposal() for j=1:n]) for i=1:k]
     MixturePhyloBDPChain(t, s, bdps, d, prop, 0, [])
@@ -45,11 +57,12 @@ function mcmc!(chain::MixturePhyloBDPChain{T,V}, n=1000;
         operator_switchmode_constantrates_nowgd!(M, chain);
         push!(chain.trace, [chain[:K], chain[:λ], chain[:μ]])
         if i % show_every == 0
-            println("Generation $i, K = $(chain[:K]), n = $(chain[:n])")
+            print("Generation $i, K = $(chain[:K]), n = $(chain[:n]), ")
+            print("logpdf = $(round(chain[:logp]))\n")
             for i=1:chain[:K]
-                l = round(chain[:λ, i], digits=3)
-                m = round(chain[:μ, i], digits=3)
-                println("   ($i) λ = $l, μ = $m")
+                l = join(round.(chain[:λ][1:3,i], digits=3), ",")
+                m = join(round.(chain[:μ][1:3,i], digits=3), ",")
+                println("   ($i) λ = $l,⋯ ; μ = $m,⋯")
             end
         end
     end
@@ -59,21 +72,22 @@ function operator_switchmode_constantrates_nowgd!(X, chain, κ=5)
     # changes everything, i.e. z, K, λk, μk (except η)
     # state should contain :λ, :μ, :K, :z, :bdps
     # add κ clusters
-    r = rand(chain.prior.G0, κ)
+    l, m = rand(chain.prior, κ)
     α = chain.prior.α
-    λ = [chain[:λ] ; r[1,:]]
-    μ = [chain[:μ] ; r[2,:]]
+    λ = [chain[:λ]  l]
+    μ = [chain[:μ]  m]
     K = chain[:K] + κ
     z = chain[:z]
     n = [chain[:n] ; zeros(Int64, κ)]
+    № = length(chain.tree)
     L = zeros(size(X)[1])
 
     # get the DLModel structs once for each cluster (ϵ & W computed once )
     bdps = chain.bdps
     prop = chain.proposals
-    bdps = [bdps ; [DLModel(bdps[1], [λ[i], μ[i]]) for i=K-κ+1:K]]
-    prop = [prop ; [Proposals(:θ =>typeof(prop[1][:θ])(prop[1][:θ].kernel,
-        prop[1][:θ].tuneinterval, 0)) for i=K-κ+1:K]]
+    bdps = [bdps ; [DLModel(bdps[1], [λ[:,i] ; μ[:,i]]) for i=K-κ+1:K]]
+    prop = [prop ; [Proposals(:θ =>[AdaptiveUnProposal() for j=1:№])
+        for i=K-κ+1:K]]
 
     for i=1:size(X)[1]   # not possible to parallelize...
         n[z[i]] -= 1
@@ -95,6 +109,7 @@ function operator_switchmode_constantrates_nowgd!(X, chain, κ=5)
     # update cluster params with a MH step, may be accelerated with a
     # scalable MH step or some delayed acceptance thing.
     empty = Int64[]
+    chain[:logp] = 0.
     for k=1:K
         if n[k] == 0
             push!(empty, k)
@@ -102,24 +117,32 @@ function operator_switchmode_constantrates_nowgd!(X, chain, κ=5)
         end
         # should be possible to compute logpdf in parallel, or should for k=1:K
         # be a distributed for loop?
-        r = prop[k][:θ]
-        λ_, a = AdaptiveMCMC.scale(r, λ[k])
-        μ_, b = AdaptiveMCMC.scale(r, μ[k])
-        #λ_ < 0. || μ_ < 0. ? continue : nothing
-        bdp = DLModel(bdps[k], [λ_, μ_])
-        l  = sum(L[z .== k])
-        p  = logpdf(chain.prior.G0, [λ[k], μ[k]])
-        l_ = logpdf(bdp, X[z .== k, :])
-        p_ = logpdf(chain.prior.G0, [λ_, μ_])
-        mhr = l_ + p_ - l - p + a + b
-        if log(rand()) < mhr
-            bdps[k] = bdp
-            λ[k] = λ_
-            μ[k] = μ_
-            prop[k][:θ].accepted += 1
-        end
-        if chain.gen % prop[k][:θ].tuneinterval == 0
-            AdaptiveMCMC.adapt!(prop[k][:θ], chain.gen)
+        for i in postorder(chain.tree)
+            r = prop[k][:θ][i]
+            λik, a = AdaptiveMCMC.scale(r, λ[i,k])
+            μik, b = AdaptiveMCMC.scale(r, μ[i,k])
+            λk_ = deepcopy(λ[:,k])
+            μk_ = deepcopy(μ[:,k])
+            λk_[i] = λik
+            μk_[i] = μik
+            bdp = DLModel(bdps[k], [λk_ ; μk_])
+            l  = sum(L[z .== k])
+            p  = logpdf(chain.prior.G0, [λ[:,k] ; μ[:,k]])
+            l_ = logpdf(bdp, X[z .== k, :])
+            p_ = logpdf(chain.prior.G0, [λk_ ; μk_])
+            mhr = l_ + p_ - l - p + a + b
+            if log(rand()) < mhr
+                bdps[k] = bdp
+                λ[i,k] = λik
+                μ[i,k] = μik
+                prop[k][:θ][i].accepted += 1
+                chain[:logp] += l_ + p_
+            else
+                chain[:logp] += l + p
+            end
+            if chain.gen % prop[k][:θ][i].tuneinterval == 0
+                AdaptiveMCMC.adapt!(prop[k][:θ][i], chain.gen, 0.36)
+            end
         end
     end
     for k in reverse(empty)
@@ -141,7 +164,11 @@ function decrease(z, k, args...)
     a = []
     for i in 1:length(args)
         θ = args[i]
-        θ = k > length(θ) ? θ[1:k-1] : [θ[1:k-1] ; θ[k+1:end]]
+        if length(size(θ)) == 1
+            θ = k > length(θ) ? θ[1:k-1] : [θ[1:k-1] ; θ[k+1:end]]
+        else
+            θ = k > size(θ)[2] ? θ[:,1:k-1] : [θ[:,1:k-1]  θ[:,k+1:end]]
+        end
         push!(a, θ)
     end
     (z, a...)
