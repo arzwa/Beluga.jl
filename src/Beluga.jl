@@ -5,6 +5,7 @@ module Beluga
     using PhyloTrees
     using DataFrames
     using ForwardDiff
+    using Parameters
     using Optim
     using StatsBase
     using AdaptiveMCMC
@@ -13,7 +14,9 @@ module Beluga
     include("dlmodel.jl")
     include("csurosmiklos.jl")
     include("mle.jl")
+    include("mcmc.jl")
+    include("gbm.jl")
 
     export
-        SpeciesTree, DLModel, profile, logpdf, mle
+        SpeciesTree, DLModel, profile, logpdf, mle, GBMRatesPrior, mcmc!, DLChain
 end

@@ -31,17 +31,15 @@ function DLModel(Ψ::SpeciesTree, mmax::Int64, λ::T, μ::T, η::T) where {T<:Re
     DLModel(Ψ, mmax, [LinearBDP(λ, μ) for i=1:n], Geometric(η))
 end
 
+function DLModel(d::DLModel, λ::Vector{T}, μ::Vector{T}) where {T<:Real}
+    b = [LinearBDP(λ[i], μ[i]) for i in 1:length(λ)]
+    return DLModel(d.tree, d.max, b, d.ρ)
+end
+
 function DLModel(d::DLModel, x::Vector{<:Real})
     n = length(x) ÷ 2
-    if n == 1
-        b = [LinearBDP(x[1], x[2])]
-        return DLModel(d.tree, d.max, b, d.ρ)
-    else
-        λ = x[1:n]
-        μ = x[n+1:end]
-        b = [LinearBDP(λ[i], μ[i]) for i in 1:n]
-        return DLModel(d.tree, d.max, b, d.ρ)
-    end
+    return n == 1 ? DLModel(d.tree, d.max, [LinearBDP(x[1], x[2])], d.ρ) :
+        DLModel(d, x[1:n], x[n+1:end])
 end
 
 # helpers
