@@ -31,9 +31,8 @@ function DLModel(Ψ::SpeciesTree, mmax::Int64, λ::T, μ::T, η::T) where {T<:Re
     DLModel(Ψ, mmax, [LinearBDP(λ, μ) for i=1:n], Geometric(η))
 end
 
-function DLModel(d::DLModel, λ::Vector{T}, μ::Vector{T}) where {T<:Real}
-    b = [LinearBDP(λ[i], μ[i]) for i in 1:length(λ)]
-    return DLModel(d.tree, d.max, b, d.ρ)
+function DLModel(d::DLModel, λ::Vector{T}, μ::Vector{T}, η::T) where {T<:Real}
+    return DLModel(d.tree, d.max, λ, μ, η)
 end
 
 function DLModel(d::DLModel, x::Vector{<:Real})
@@ -174,7 +173,7 @@ function oib(ρ::Geometric, d::DLModel)
     rght = geometric_extinctionp(d[g, 1], η)
     #1. - left - rght + root
     p = (1. -left)*(1. -rght)
-    p = isapprox(p, zero(p), atol=1e-12) ? zero(p) : p  # XXX had some issues
+    #p = isapprox(p, zero(p), atol=1e-12) ? zero(p) : p  # XXX had some issues
     return p
 end
 

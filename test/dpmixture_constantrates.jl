@@ -36,7 +36,7 @@ M = profile(s, df)
 
 n = length(s)
 a = 0.9
-Σ = [I+zeros(n, n) a*I+zeros(n,n); a* I+zeros(n, n) I+zeros(n,n)]
+Σ = [I+zeros(n, n) a*I+zeros(n,n);z a* I+zeros(n, n) I+zeros(n,n)]
 G0 = MvLogNormal(log.(repeat([0.2], 2*length(s))), Σ)
 prior = ConstantDPModel(G0, 1.)
 chain = init(prior, s, M)

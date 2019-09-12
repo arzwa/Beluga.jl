@@ -28,7 +28,8 @@ function DLChain(X::AbstractMatrix{Int64}, prior::RatesPrior, tree::SpeciesTree)
     proposals = get_defaultproposals(init)
     trace = DataFrame()
     gen = 0
-    model = DLModel(tree, maximum(X), init[:λ], init[:μ], init[:η])
+    mmax = size(X)[1] == 0 ? 0 : maximum(X)
+    model = DLModel(tree, mmax, init[:λ], init[:μ], init[:η])
     return DLChain(X, model, tree, init, prior, proposals, trace, gen)
 end
 
@@ -38,10 +39,11 @@ function get_defaultproposals(x::State)
         if k ∈ [:logπ, :logp]
             continue
         elseif typeof(v) <: AbstractArray
-            proposals[k] = [
-                AdaptiveUvProposal(Uniform(-0.1, 0.1), 25) for i=1:length(v)]
-        else
-            proposals[k] = AdaptiveUnProposal()
+            proposals[k] = [AdaptiveScaleProposal(0.1) for i=1:length(v)]
+        elseif k == :ν
+            proposals[k] = AdaptiveScaleProposal(0.5)
+        elseif k == :η
+            proposals[k] = AdaptiveUnitProposal(0.2)
         end
     end
     return proposals
@@ -81,9 +83,30 @@ end
 logprior(c::DLChain, θ) = logprior(c.priors, θ)
 
 function loglhood(c::DLChain, θ::NamedTuple)
-    @unpack λ, μ = θ
-    dlm = DLModel(c.model, λ, μ)
+    if size(c.X)[1] == 0
+        return 0., c.model
+    end
+    @unpack λ, μ, η = θ
+    dlm = DLModel(c.model, λ, μ, η)
     logpdf(dlm, c.X), dlm
+end
+
+function Distributions.logpdf(c::DLChain, args...)
+    state = deepcopy(c.state)
+    for (k, v) in args
+        if k == :θ
+            n = length(v) ÷ 2
+            state[:λ] = v[1:n]
+            state[:μ] = v[n+1:end]
+        elseif ~haskey(state, k)
+            @error "State does not contain variable $k"
+        else
+            state[k] = v
+        end
+    end
+    pr = logprior(c,(Ψ=c.Ψ, ν=state[:ν], λ=state[:λ], μ=state[:μ], η=state[:η]))
+    dlm = DLModel(c.model, state[:λ], state[:μ], state[:η])
+    pr + logpdf(dlm, c.X), dlm
 end
 
 Distributions.logpdf(chain::Chain) = logpdf(chain.prior,
@@ -103,7 +126,7 @@ end
 
 function move_ν!(chain::DLChain)
     prop = chain.proposals[:ν]
-    ν_, hr = AdaptiveMCMC.scale(prop, chain[:ν])
+    ν_, hr = prop(chain[:ν])
     p_ = logprior(chain, (Ψ=chain.Ψ, λ=chain[:λ],μ=chain[:μ],η=chain[:η], ν=ν_))
     mhr = p_ - chain[:logπ] + hr
     if log(rand()) < mhr
@@ -116,10 +139,13 @@ end
 
 function move_η!(chain::DLChain)
     prop = chain.proposals[:η]
-    η_ = reflect(rw(prop, chain[:η])[1])
+    η_, hr = prop(chain[:η])
     p_ = logprior(chain, (Ψ=chain.Ψ, λ=chain[:λ],μ=chain[:μ],η=η_, ν=chain[:ν]))
-    mhr = p_ - chain[:logπ]
+    l_, model = loglhood(chain, (λ=chain[:λ], μ=chain[:μ], η=η_,))
+    mhr = p_ + l_ - chain[:logπ] - chain[:logp]
     if log(rand()) < mhr
+        chain.model = model
+        chain[:logp] = l_
         chain[:logπ] = p_
         chain[:η] = η_
         prop.accepted += 1
@@ -130,11 +156,11 @@ end
 function move_rates!(chain::DLChain)
     for i in postorder(chain.Ψ)
         prop = chain.proposals[:λ, i]
-        λi, hr1 = AdaptiveMCMC.scale(prop, chain[:λ,i])
-        μi, hr2 = AdaptiveMCMC.scale(prop, chain[:μ,i])
+        λi, hr1 = prop(chain[:λ,i])
+        μi, hr2 = prop(chain[:μ,i])
         λ_ = deepcopy(chain[:λ]) ; λ_[i] = λi
         μ_ = deepcopy(chain[:μ]) ; μ_[i] = μi
-        l_, model = loglhood(chain, (λ=λ_, μ=μ_))
+        l_, model = loglhood(chain, (λ=λ_, μ=μ_, η=chain[:η]))
         p_  = logprior(chain, (Ψ=chain.Ψ, λ=λ_, μ=μ_, η=chain[:η], ν=chain[:ν]))
         l = chain[:logp]
         p = chain[:logπ]
