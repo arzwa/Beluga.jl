@@ -18,5 +18,5 @@ module Beluga
     include("gbm.jl")
 
     export
-        SpeciesTree, DLModel, profile, logpdf, mle, GBMRatesPrior, mcmc!, DLChain
+        SpeciesTree, DLModel, profile, logpdf, mle, GBMRatesPrior, mcmc!, DLChain, LogRatesPrior
 end

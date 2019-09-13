@@ -50,6 +50,34 @@ function get_defaultproposals(x::State)
 end
 
 # this is the model without correlation of λ and μ
+struct LogRatesPrior <: RatesPrior
+    dν::Prior
+    dλ::Prior
+    dμ::Prior
+    dη::Prior
+end
+
+function logprior(d::LogRatesPrior, θ::NamedTuple)
+    @unpack Ψ, ν, λ, μ, η = θ
+    @unpack dν, dλ, dμ, dη = d
+    n = length(Ψ.tree.branches)
+    lp  = logpdf(dν, ν) + logpdf(dλ, λ[1]) + logpdf(dμ, μ[1]) + logpdf(dη, η)
+    lp += logpdf(MvNormal(repeat([λ[1]],n), ν), λ[2:end])
+    lp += logpdf(MvNormal(repeat([μ[1]],n), ν), μ[2:end])
+    return lp
+end
+
+function Base.rand(d::LogRatesPrior, tree::Arboreal)
+    @unpack dν, dλ, dμ, dη = d
+    ν = rand(dν)
+    η = rand(dη)
+    λ0 = rand(dλ)
+    μ0 = rand(dμ)
+    λ = [λ0 ; rand(MvNormal(repeat([λ0], length(tree.tree.branches)), ν))]
+    μ = [μ0 ; rand(MvNormal(repeat([μ0], length(tree.tree.branches)), ν))]
+    return State(:ν=>ν, :η=>η, :λ=>λ, :μ=>μ, :logp=>-Inf, :logπ=>-Inf)
+end
+
 struct GBMRatesPrior <: RatesPrior
     dν::Prior
     dλ::Prior
@@ -105,8 +133,8 @@ function Distributions.logpdf(c::DLChain, args...)
         end
     end
     pr = logprior(c,(Ψ=c.Ψ, ν=state[:ν], λ=state[:λ], μ=state[:μ], η=state[:η]))
-    dlm = DLModel(c.model, state[:λ], state[:μ], state[:η])
-    pr + logpdf(dlm, c.X), dlm
+    dlm = DLModel(c.model, exp.(state[:λ]), exp.(state[:μ]), state[:η])
+    pr + logpdf(dlm, c.X)
 end
 
 Distributions.logpdf(chain::Chain) = logpdf(chain.prior,
