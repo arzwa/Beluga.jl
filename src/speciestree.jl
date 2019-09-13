@@ -36,6 +36,8 @@ Base.display(Ψ::SpeciesTree) = println("$(typeof(Ψ))($(length(Ψ)))")
 leafname(Ψ::SpeciesTree, i::Int64) = Ψ.leaves[i]
 leafname(d::PhyloLinearBDP, i::Int64) = leafname(d.tree, i)
 
+iswgd(Ψ::SpeciesTree, i::Int64) = haskey(Ψ.bindex[i], :q)
+
 function set_constantrates!(Ψ::SpeciesTree, s=:θ)
     for k in keys(Ψ.bindex)
         Ψ.bindex[k, s] = 1
@@ -53,4 +55,21 @@ function profile(Ψ::SpeciesTree, df::DataFrame)
             sum([M[:, c] for c in childnodes(Ψ,n)])
     end
     return M
+end
+
+function example_data1()
+    s = "(D:18.03,(C:12.06,(B:7.06,A:7.06):4.99):5.97);"
+    t = SpeciesTree(read_nw(s)[1:2]...)
+    x = DataFrame(:A=>[2],:B=>[2],:C=>[3],:D=>[4])
+    M = profile(t, x)
+    t, M
+end
+
+function example_data2()
+    s = "(D:18.03,((C:12.06,(B:7.06,A:7.06):4.99):2.00):3.97);"
+    t = SpeciesTree(read_nw(s)[1:2]...)
+    t.bindex[3, :q] = 1
+    x = DataFrame(:A=>[2],:B=>[2],:C=>[3],:D=>[4])
+    M = profile(t, x)
+    t, M
 end
