@@ -8,11 +8,11 @@ function csuros_miklos!(L::Matrix{T},
     mx = size(L)[2]-1
 
     for e in branches
-        if isleaf(d, e)
-            L[e, M[e]+1] = 1.0
+        if isleaf(tree, e)
+            L[e, x[e]+1] = 1.0
         else
             children = childnodes(tree, e)
-            Mc = [M[c] for c in children]
+            Mc = [x[c] for c in children]
             _M = cumsum([0 ; Mc])
             _ϵ = cumprod([1.; [ϵ[c, 1] for c in children]])
             B = zeros(eltype(_ϵ), length(children), _M[end]+1, mx+1)
@@ -28,6 +28,7 @@ function csuros_miklos!(L::Matrix{T},
                         B[i,t+1,s+1] = B[i,t,s+2] + ϵ[c,1]*B[i,t,s+1]
                     end
                 end
+                # XXX here something might have to change in the WGD case
                 if i == 1
                     for n=0:_M[i+1]  # this is 0 ... M[i]
                         A[i,n+1] = B[i,1,n+1]/(1. - _ϵ[2])^n
@@ -37,21 +38,25 @@ function csuros_miklos!(L::Matrix{T},
                     for n=0:_M[i+1], t=0:_M[i]
                         s = n-t
                         p = _ϵ[i]
-                        p = isapprox(p, one(p)) ? one(p) : p  # had some problem
-                        s < 0 || s > Mi ? continue : A[i,n+1] += pdf(Binomial(
-                            n, p), s) * A[i-1,t+1] * B[i,t+1,s+1]
+                        #p = isapprox(p, one(p)) ? one(p) : p  # had some problem
+                        if s < 0 || s > Mi
+                            continue
+                        else
+                            A[i,n+1] += pdf(Binomial(n, p), s) *
+                                A[i-1,t+1] * B[i,t+1,s+1]
+                        end
                     end
                     for n=0:_M[i+1]  # this is 0 ... M[i]
                         A[i,n+1] /= (1. - _ϵ[i+1])^n
                     end
                 end
             end
-            for n=0:M[e]
+            for n=0:x[e]
                 L[e, n+1] = A[end, n+1]
             end
         end
     end
-    log.(L)
+    return L
 end
 
 

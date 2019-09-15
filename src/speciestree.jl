@@ -73,3 +73,14 @@ function example_data2()
     M = profile(t, x)
     t, M
 end
+
+function get_parentbranches(s::Arboreal, node::Int64)
+    branches = Int64[]
+    n = node
+    root = findroot(s)
+    while n != root
+        push!(branches, n)
+        n = parentnode(s.tree, n)
+    end
+    return [branches; [root]]
+end
