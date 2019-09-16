@@ -6,8 +6,8 @@ const State = Dict{Symbol,Union{Vector{Float64},Float64}}
 Distributions.logpdf(x::Real, y) = 0.  # hack for constant priors
 
 mutable struct DLChain <: Chain
-    X::AbstractMatrix{Int64}
-    model::DLModel
+    X::PArray
+    model::DuplicationLossWGD
     Ψ::SpeciesTree
     state::State
     priors::RatesPrior
@@ -23,13 +23,12 @@ Base.setindex!(w::Chain, x, s::Symbol, i::Int64) = w.state[s][i] = x
 Base.display(io::IO, w::Chain) = print("$(typeof(w))($(w.state))")
 Base.show(io::IO, w::Chain) = write(io, "$(typeof(w))($(w.state))")
 
-function DLChain(X::AbstractMatrix{Int64}, prior::RatesPrior, tree::SpeciesTree)
+function DLChain(X::PArray, prior::RatesPrior, tree::SpeciesTree, m::Int64)
     init = rand(prior, tree)
     proposals = get_defaultproposals(init)
     trace = DataFrame()
     gen = 0
-    mmax = size(X)[1] == 0 ? 0 : maximum(X)
-    model = DLModel(tree, mmax, init[:λ], init[:μ], init[:η])
+    model = DuplicationLossWGD(tree, init[:λ], init[:μ], init[:q], init[:η], m)
     return DLChain(X, model, tree, init, prior, proposals, trace, gen)
 end
 
@@ -54,27 +53,31 @@ struct GBMRatesPrior <: RatesPrior
     dν::Prior
     dλ::Prior
     dμ::Prior
+    dq::Prior
     dη::Prior
 end
 
 function Base.rand(d::GBMRatesPrior, tree::Arboreal)
-    @unpack dν, dλ, dμ, dη = d
+    # assumed single prior for q for now, easy to adapt though
+    @unpack dν, dλ, dμ, dq, dη = d
     ν = rand(dν)
     η = rand(dη)
     λ0 = rand(dλ)
     μ0 = rand(dμ)
     λ = rand(GBM(tree, λ0, ν))
     μ = rand(GBM(tree, λ0, ν))
-    return State(:ν=>ν, :η=>η, :λ=>λ, :μ=>μ, :logp=>-Inf, :logπ=>-Inf)
+    q = rand(dq, Beluga.nwgd(tree))
+    return State(:ν=>ν, :η=>η, :λ=>λ, :μ=>μ, :q=>q, :logp=>-Inf, :logπ=>-Inf)
 end
 
 """
 Example: `logpdf(gbm, (Ψ=t, ν=0.2, λ=rand(17), μ=rand(17), η=0.8))`
 """
 function logprior(d::GBMRatesPrior, θ::NamedTuple)
-    @unpack Ψ, ν, λ, μ, η = θ
-    @unpack dν, dλ, dμ, dη = d
+    @unpack Ψ, ν, λ, μ, q, η = θ
+    @unpack dν, dλ, dμ, dq, dη = d
     lp  = logpdf(dν, ν) + logpdf(dλ, λ[1]) + logpdf(dμ, μ[1]) + logpdf(dη, η)
+    lp += sum(logpdf.(dq, q))
     lp += logpdf(GBM(Ψ, λ[1], ν), λ)
     lp += logpdf(GBM(Ψ, μ[1], ν), μ)
     return lp
@@ -86,31 +89,11 @@ function loglhood(c::DLChain, θ::NamedTuple)
     if size(c.X)[1] == 0
         return 0., c.model
     end
-    @unpack λ, μ, η = θ
-    dlm = DLModel(c.model, λ, μ, η)
+    @unpack λ, μ, q, η = θ
+    d = deepcopy(c.model)
+
     logpdf(dlm, c.X), dlm
 end
-
-function Distributions.logpdf(c::DLChain, args...)
-    state = deepcopy(c.state)
-    for (k, v) in args
-        if k == :θ
-            n = length(v) ÷ 2
-            state[:λ] = v[1:n]
-            state[:μ] = v[n+1:end]
-        elseif ~haskey(state, k)
-            @error "State does not contain variable $k"
-        else
-            state[k] = v
-        end
-    end
-    pr = logprior(c,(Ψ=c.Ψ, ν=state[:ν], λ=state[:λ], μ=state[:μ], η=state[:η]))
-    dlm = DLModel(c.model, state[:λ], state[:μ], state[:η])
-    pr + logpdf(dlm, c.X), dlm
-end
-
-Distributions.logpdf(chain::Chain) = logpdf(chain.prior,
-    (Ψ=chain.Ψ, ν=chain[:ν], λ=chain[:λ], μ=chain[:μ], η=chain[:η]))
 
 function mcmc!(chain::DLChain, n::Int64, args...;
         show_every=100, show_trace=true)

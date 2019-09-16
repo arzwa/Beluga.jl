@@ -9,8 +9,11 @@ module Beluga
     using Optim
     using StatsBase
     using AdaptiveMCMC
+    using DistributedArrays
 
     include("speciestree.jl")
+    include("dlwgd.jl")
+    include("profile.jl")
     #include("dlmodel.jl")
     #include("csurosmiklos.jl")
     #include("mle.jl")
@@ -18,5 +21,6 @@ module Beluga
     #include("gbm.jl")
 
     export
-        SpeciesTree, DLModel, profile, logpdf, mle, GBMRatesPrior, mcmc!, DLChain, PhyloBDP
+        SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,
+        logpdf, logpdf!, Profile, PArray
 end
