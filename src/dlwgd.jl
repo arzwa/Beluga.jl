@@ -83,7 +83,12 @@ function Distributions.logpdf!(L::Matrix{T},
     L = csuros_miklos!(L, x, d.value, d.tree, branches)
     root = branches[end]
     l = integrate_root(L[root,:], d.η, d.value.ϵ[root,2])
-    l - log(condition_oib(d.tree, d.η, d.value.ϵ))
+    try
+        return l - log(condition_oib(d.tree, d.η, d.value.ϵ))
+    catch
+        p = condition_oib(d.tree, d.η, d.value.ϵ)
+        @error "log error: log($p) at condition_oib"
+    end
 end
 
 # extinction probabilities
