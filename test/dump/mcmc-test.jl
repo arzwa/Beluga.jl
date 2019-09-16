@@ -1,26 +1,32 @@
 using CSV
 using DataFrames
-using StatsBase
-using Plots
-using JLD
+#using StatsBase, Plots, JLD
 using PhyloTrees
 using Distributed
 using Distributions
 using AdaptiveMCMC
-#addprocs(2)
-#@everywhere using DistributedArrays
+using Parameters
+addprocs(2)
+@everywhere using DistributedArrays
 @everywhere using Beluga
+include("../../src/mcmc.jl")
 
 s = SpeciesTree("test/data/tree1.nw")
 df = CSV.read("test/data/counts2.tsv", delim="\t")
 deletecols!(df, :Orthogroup)
-M = profile(s, df)
+p, m = Profile(df, s)
+
 #M = distribute(profile(s, df))
 #M = zeros(Int64, 0, 0)
 
 prior = GBMRatesPrior(
-    InverseGamma(5,1), Exponential(0.2), Exponential(0.2), Beta(10,1))
-chain = DLChain(M, prior, s)
+    InverseGamma(5,1),
+    Exponential(0.2),
+    Exponential(0.2),
+    Beta(1,1),
+    Beta(10,1))
+
+chain = DLChain(p, prior, s, m)
 
 chain = mcmc!(chain, 11000, show_every=10)
 CSV.write("beluga-amcmc-test.csv", chain.trace)

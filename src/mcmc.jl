@@ -85,16 +85,6 @@ end
 
 logprior(c::DLChain, θ) = logprior(c.priors, θ)
 
-function loglhood(c::DLChain, θ::NamedTuple)
-    if size(c.X)[1] == 0
-        return 0., c.model
-    end
-    @unpack λ, μ, q, η = θ
-    d = deepcopy(c.model)
-
-    logpdf(dlm, c.X), dlm
-end
-
 function mcmc!(chain::DLChain, n::Int64, args...;
         show_every=100, show_trace=true)
     for i=1:n
@@ -110,7 +100,8 @@ end
 function move_ν!(chain::DLChain)
     prop = chain.proposals[:ν]
     ν_, hr = prop(chain[:ν])
-    p_ = logprior(chain, (Ψ=chain.Ψ, λ=chain[:λ],μ=chain[:μ],η=chain[:η], ν=ν_))
+    p_ = logprior(chain,
+        (Ψ=chain.Ψ, λ=chain[:λ], μ=chain[:μ], q=chain[:q], η=chain[:η], ν=ν_))
     mhr = p_ - chain[:logπ] + hr
     if log(rand()) < mhr
         chain[:logπ] = p_
@@ -123,38 +114,61 @@ end
 function move_η!(chain::DLChain)
     prop = chain.proposals[:η]
     η_, hr = prop(chain[:η])
-    p_ = logprior(chain, (Ψ=chain.Ψ, λ=chain[:λ],μ=chain[:μ],η=η_, ν=chain[:ν]))
-    l_, model = loglhood(chain, (λ=chain[:λ], μ=chain[:μ], η=η_,))
+
+    # prior
+    p_ = logprior(chain,
+        (Ψ=chain.Ψ, λ=chain[:λ], μ=chain[:μ], η=η_, q=chain[:q], ν=chain[:ν]))
+
+    # likelihood
+    d = deepcopy(chain.model)
+    d[:η] = η_
+    l_ = logpdf!(d, chain.X, 1)  # XXX assume root is node 1
+
     mhr = p_ + l_ - chain[:logπ] - chain[:logp]
     if log(rand()) < mhr
-        chain.model = model
+        set_L!(chain.X)    # update L matrix
+        chain.model = d
         chain[:logp] = l_
         chain[:logπ] = p_
         chain[:η] = η_
         prop.accepted += 1
+    else
+        set_Ltmp!(chain.X)  # revert Ltmp matrix
     end
     consider_adaptation!(prop, chain.gen)
 end
 
 function move_rates!(chain::DLChain)
+    # TODO q update too!
     for i in postorder(chain.Ψ)
         prop = chain.proposals[:λ, i]
         λi, hr1 = prop(chain[:λ,i])
         μi, hr2 = prop(chain[:μ,i])
-        λ_ = deepcopy(chain[:λ]) ; λ_[i] = λi
-        μ_ = deepcopy(chain[:μ]) ; μ_[i] = μi
-        l_, model = loglhood(chain, (λ=λ_, μ=μ_, η=chain[:η]))
-        p_  = logprior(chain, (Ψ=chain.Ψ, λ=λ_, μ=μ_, η=chain[:η], ν=chain[:ν]))
+
+        # likelihood
+        d = deepcopy(chain.model)
+        d[:λ, i] = λi
+        d[:μ, i] = μi
+        l_ = logpdf!(d, chain.X, i)
+
+        # prior
+        p_  = logprior(chain,
+            (Ψ=chain.Ψ, λ=d.λ, μ=d.μ, q=chain[:q], η=chain[:η], ν=chain[:ν]))
+
         l = chain[:logp]
         p = chain[:logπ]
+
         mhr = l_ + p_ - l - p + hr1 + hr2
         if log(rand()) < mhr
-            chain.model = model
+            set_L!(chain.X)    # update L matrix
+            chain.model = d
             chain[:λ, i] = λi
             chain[:μ, i] = μi
             chain[:logp] = l_
             chain[:logπ] = p_
             prop.accepted += 1
+        else
+            set_Ltmp!(chain.X)  # revert Ltmp matrix
         end
         consider_adaptation!(prop, chain.gen)
     end

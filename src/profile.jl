@@ -52,7 +52,15 @@ function Distributions.logpdf!(m::PhyloBDP, p::PArray, node::Int64=-1)
     mapreduce((x)->logpdf!(x.Ltmp, m, x.x, branches), +, p)
 end
 
-set_tmp!(p::PArray) = map((x)->_set_tmp!(x), p)
-set_L!(p::PArray) = map((x)->_set_L!(x), p)
-_set_tmp!(p::Profile) = p.Ltmp = p.L
-_set_L!(p::Profile) = p.L = p.Ltmp
+set_Ltmp!(p::PArray) = ppeval(_set_Ltmp!, p)
+set_L!(p::PArray) = ppeval(_set_L!, p)
+
+function _set_Ltmp!(p)
+    p[1].Ltmp = p[1].L
+    0.
+end
+
+function _set_L!(p)
+    p[1].L = p[1].Ltmp
+    0.
+end

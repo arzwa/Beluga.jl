@@ -14,13 +14,9 @@ module Beluga
     include("speciestree.jl")
     include("dlwgd.jl")
     include("profile.jl")
-    #include("dlmodel.jl")
-    #include("csurosmiklos.jl")
-    #include("mle.jl")
-    #include("mcmc.jl")
-    #include("gbm.jl")
+    include("gbm.jl")
 
     export
         SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,
-        logpdf, logpdf!, Profile, PArray
+        logpdf, logpdf!, Profile, PArray, set_L!, set_Ltmp!, GBM
 end

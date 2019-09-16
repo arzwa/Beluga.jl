@@ -176,7 +176,11 @@ function integrate_root(L::Vector{T}, η::T, ϵ::T) where T<:Real
         f = (1. - ϵ)^(i-1)*η*(1. -η)^(i-2)/(1. -(1. -η)*ϵ)^i
         p += L[i] * f
     end
-    log(p)
+    try
+        return log(p)
+    catch
+        @error "log error: log($p);\n L = $L"
+    end
 end
 
 function condition_oib(tree::Arboreal, η::T, ϵ::Matrix{T}) where T<:Real
