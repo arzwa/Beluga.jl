@@ -102,7 +102,8 @@ function Distributions.logpdf!(L::Matrix{T},
 end
 
 # Different interface (than profile) to compute the accumulated logpdf over
-# multiple phylogenetic profiles
+# multiple phylogenetic profiles, note that it is in fact slower than the
+# Profile approach
 function Distributions.logpdf(d::DuplicationLossWGD, X::AbstractMatrix{Int64})
     m = maximum(X)
     L = zeros(size(X)..., m+1)
