@@ -51,10 +51,16 @@ DuplicationLoss(tree::Arboreal, λ::Vector{T}, μ::Vector{T}, η::T, mmax::Int
 
 Base.show(io::IO, d::DuplicationLossWGD) = show(io, d, (:λ, :μ, :q, :η))
 
+# NB: takes a node index!
+Base.getindex(d::DuplicationLossWGD, s::Symbol, i::Int64) =
+    getfield(d, s)[d.tree[i, _translate(s)]]
+
 # efficiently changing parameters by only recomputing required branches
 function Base.setindex!(d::DuplicationLossWGD{T,Ψ}, v::T, s::Symbol,
         i::Int) where {Ψ<:Arboreal,T<:Real}
-    getfield(d, s)[i] = v
+    # NB: this takes a node index, not rate index!
+    idx = d.tree[i, _translate(s)]
+    getfield(d, s)[idx] = v
     bs = get_parentbranches(d.tree, i)
     get_ϵ!(d, bs)
     get_W!(d, d.value.m, bs)
@@ -69,6 +75,9 @@ function Base.setindex!(d::DuplicationLossWGD{T,Ψ}, v::T,
     get_W!(d, d.value.m, bs)
 end
 
+
+# logpdf
+# ======
 function Distributions.logpdf(d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
     L = zeros(T, length(d.tree), maximum(x)+1)
@@ -87,11 +96,25 @@ function Distributions.logpdf!(L::Matrix{T},
         return l - log(condition_oib(d.tree, d.η, d.value.ϵ))
     catch
         p = condition_oib(d.tree, d.η, d.value.ϵ)
-        @error "log error: log($p) at condition_oib"
+        @error "log error: log($p) at condition_oib\n $d"
+        return -Inf
     end
 end
 
+# Different interface (than profile) to compute the accumulated logpdf over
+# multiple phylogenetic profiles
+function Distributions.logpdf(d::DuplicationLossWGD, X::AbstractMatrix{Int64})
+    m = maximum(X)
+    L = zeros(size(X)..., m+1)
+    l = @inbounds @distributed (+) for i=1:size(X)[1]
+        logpdf!(L[i,:,:], d, X[i,:], d.tree.order)
+    end
+    l
+end
+
+
 # extinction probabilities
+# ========================
 get_ϵ!(d::DuplicationLossWGD) = get_ϵ!(d, d.tree.order)
 
 function get_ϵ!(model::DuplicationLossWGD, branches::Vector{Int64})
@@ -106,21 +129,28 @@ function get_ϵ!(model::DuplicationLossWGD, branches::Vector{Int64})
         if isleaf(tree, e)
             ϵ[e, 2] = zero(eltype(ϵ))
         elseif Beluga.iswgd(tree, e)
-            qe = q[tree.bindex[e, :q]]
+            qe = q[tree[e, :q]]
             f = childnodes(tree, e)[1]
             #@show parentdist(tree, f)
             #@show ep(λ[f], μ[f], parentdist(tree, f), ϵ[f, 2])
-            ϵ[f, 1] = ep(λ[f], μ[f], parentdist(tree, f), ϵ[f, 2])
+            μf = μ[tree[f, :θ]]
+            λf = λ[tree[f, :θ]]
+            ϵ[f, 1] = ep(λf, μf, parentdist(tree, f), ϵ[f, 2])
             ϵ[f, 1] = ϵ[e, 2] = qe*ϵ[f, 1]^2 + (1. - qe)*ϵ[f, 1]  # HACK?
         else
             for c in childnodes(tree, e)
-                ϵ[c, 1] = ep(λ[c], μ[c], parentdist(tree, c), ϵ[c, 2])
+                μc = μ[tree[c, :θ]]
+                λc = λ[tree[c, :θ]]
+                ϵ[c, 1] = ep(λc, μc, parentdist(tree, c), ϵ[c, 2])
                 ϵ[e, 2] *= ϵ[c, 1]
             end
         end
     end
 end
 
+
+# transition probabiities
+# =======================
 # W matrix for Csuros & Miklos algorithm
 get_W!(d::DuplicationLossWGD, mmax::Int64) = get_W!(d, mmax, d.tree.order)
 
@@ -129,8 +159,8 @@ function get_W!(model::DuplicationLossWGD, mmax::Int64, branches::Vector{Int64})
     @unpack tree, λ, μ, q, η, value = model
     @unpack W, ϵ, m = value
     for i in branches[1:end-1]  # excluding root node
-        μi = μ[tree.bindex[i, :θ]]
-        λi = λ[tree.bindex[i, :θ]]
+        μi = μ[tree[i, :θ]]
+        λi = λ[tree[i, :θ]]
         ϵi = ϵ[i, 2]
         t = parentdist(tree, i)
         if Beluga.iswgdafter(tree, i)  # XXX↑
@@ -174,6 +204,9 @@ function _wstar_wgd(t, λ, μ, q, ϵ, mmax::Int64)
     return w
 end
 
+
+# root integration and conditioning
+# =================================
 function integrate_root(L::Vector{T}, η::T, ϵ::T) where T<:Real
     # XXX L not in log scale !
     p = 0.
@@ -184,7 +217,7 @@ function integrate_root(L::Vector{T}, η::T, ϵ::T) where T<:Real
     try
         return log(p)
     catch
-        @error "log error: log($p);\n L = $L"
+        @error "log error: log($p);\n L = $L\n at integrate_root"
     end
 end
 
@@ -203,7 +236,9 @@ end
 geometric_extinctionp(ϵ::T, η::T) where T<:Real = η*ϵ/(1. - (1. - η)*ϵ)
 geometric_extinctionp(ϵ::Real, η::Real)=geometric_extinctionp(promote(ϵ, η)...)
 
+
 # BDP utilities
+# =============
 getϕ(t, λ, μ) = λ ≈ μ ?
     λ*t/(1. + λ*t) : μ*(exp(t*(λ-μ)) - 1.)/(λ*exp(t*(λ-μ)) - μ)
 getψ(t, λ, μ) = λ ≈ μ ?
@@ -215,6 +250,9 @@ tp(a, b, t, λ, μ) = (a == b == 0) ? 1.0 :
 ep(λ, μ, t, ε) = λ ≈ μ ? 1. + (1. - ε)/(μ * (ε - 1.) * t - 1.) :
     (μ + (λ - μ)/(1. + exp((λ - μ)*t)*λ*(ε - 1.)/(μ - λ*ε)))/λ
 
+
+# The Csuros & Miklos algorithm
+# =============================
 """
     csuros_miklos!(L::Matrix{T},
         x::AbstractVector{Int64},
@@ -233,7 +271,7 @@ function csuros_miklos!(L::Matrix{T},
         tree::Arboreal,
         branches::Array{Int64}) where T<:Real
     @unpack W, ϵ, m = matrices
-    mx = size(L)[2]-1
+    mx = maximum(x)
 
     for e in branches
         if isleaf(tree, e)
@@ -248,7 +286,7 @@ function csuros_miklos!(L::Matrix{T},
             for i = 1:length(children)
                 c = children[i]
                 Mi = Mc[i]
-                B[i, 1, :] = W[1:mx+1, 1:mx+1, c] * L[c, :]
+                B[i, 1, :] = W[1:mx+1, 1:mx+1, c] * L[c, 1:mx+1]
                 for t=1:_M[i], s=0:Mi  # this is 0...M[i-1] & 0...Mi
                     if s == Mi
                         B[i,t+1,s+1] = B[i,t,s+1] * ϵ[c,1]
@@ -285,3 +323,6 @@ function csuros_miklos!(L::Matrix{T},
     end
     return L
 end
+
+ # FIXME I don't like this
+_translate(s::Symbol) = s == :λ || s == :μ ? :θ : s

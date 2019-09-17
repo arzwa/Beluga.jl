@@ -1,20 +1,5 @@
-# struct to store the data, enabling recomputation etc.
-
-# Should we store the likelihood matrices in a 3D array, or rather, like in
-# Whale for instance, keep the 2D matrix separately for each family ?
-#=struct ProfileMatrix{V<:Real}
-    X::AbstractMatrix{Int64}
-    L::AbstractArray{V,3}
-end
-
-function ProfileMatrix(df::DataFrame, tree::Arboreal)
-    n = nprocs()
-    X = distribute(profile(tree, df), dist=(n,1))
-    L = distribute(zeros(size(X)..., maximum(X)), dist=(n,1,1))
-    Profile{Float64}(X,L)
-end=#
-
-
+# struct to store the data, enabling recomputation etc. Not that this is a
+# fairly tedious interface if partial recomputation is not needed.
 """
     Profile{V<:Real}
 

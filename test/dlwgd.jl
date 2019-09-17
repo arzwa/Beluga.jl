@@ -1,8 +1,8 @@
 using Test, Beluga, PhyloTrees
 
 t, x = Beluga.example_data2()
-λ = repeat([0.2], 9)
-μ = repeat([0.3], 9)
+λ = repeat([0.2], 7)
+μ = repeat([0.3], 7)
 d1 = DuplicationLossWGD(t, λ, μ, [0.5], 1/1.5, maximum(x))
 d2 = DuplicationLossWGD(t, λ .+ 0.3, μ .+ 0.2, [0.2], 1/1.5, maximum(x))
 
@@ -53,9 +53,9 @@ end
         d_ = DuplicationLossWGD(t, d.λ, d.μ, d.q, d.η, maximum(x))
         @test all(d.value.ϵ .== d_.value.ϵ)
         @test all(d.value.W .== d_.value.W)
-        bs = get_parentbranches(t, i)
+        bs = Beluga.get_parentbranches(t, i)
         l1 = logpdf!(L, d, x, bs)  # partial recompute
-        l2, L2 = logpdf(d_, x)         # compute from scratch
+        l2, L2 = logpdf(d_, x)     # compute from scratch
         @test l1 == l2
     end
 end

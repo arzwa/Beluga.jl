@@ -37,6 +37,8 @@ function get_defaultproposals(x::State)
     for (k, v) in x
         if k ∈ [:logπ, :logp]
             continue
+        elseif k == :q
+            proposals[k] = [AdaptiveUnitProposal(0.2) for i=1:length(v)]
         elseif typeof(v) <: AbstractArray
             proposals[k] = [AdaptiveScaleProposal(0.1) for i=1:length(v)]
         elseif k == :ν
@@ -64,8 +66,10 @@ function Base.rand(d::GBMRatesPrior, tree::Arboreal)
     η = rand(dη)
     λ0 = rand(dλ)
     μ0 = rand(dμ)
-    λ = rand(GBM(tree, λ0, ν))
-    μ = rand(GBM(tree, λ0, ν))
+    # HACK not for general rate indices!
+    n = [n for n in preorder(tree) if !(iswgd(tree, n) || iswgdafter(tree, n))]
+    λ = rand(GBM(tree, λ0, ν))[n]
+    μ = rand(GBM(tree, λ0, ν))[n]
     q = rand(dq, Beluga.nwgd(tree))
     return State(:ν=>ν, :η=>η, :λ=>λ, :μ=>μ, :q=>q, :logp=>-Inf, :logπ=>-Inf)
 end
@@ -83,15 +87,31 @@ function logprior(d::GBMRatesPrior, θ::NamedTuple)
     return lp
 end
 
-logprior(c::DLChain, θ) = logprior(c.priors, θ)
+function logprior(chain::DLChain, args...)
+    s = deepcopy(chain.state)
+    for (k,v) in args
+        if haskey(s, k)
+            length(v) == 2 ? s[k][v[1]] = v[2] : s[k] = v
+        end
+    end
+    θ = (Ψ=chain.Ψ, ν=s[:ν], λ=s[:λ], μ=s[:μ], q=s[:q], η=s[:η])
+    logprior(chain, θ)
+end
+
+logprior(c::DLChain, θ::NamedTuple) = logprior(c.priors, θ)
 
 function mcmc!(chain::DLChain, n::Int64, args...;
         show_every=100, show_trace=true)
+    wgds = Beluga.nwgd(chain.Ψ) > 0
     for i=1:n
         chain.gen += 1
         move_ν!(chain)
         move_η!(chain)
         move_rates!(chain)
+        if wgds
+            move_q!(chain)
+            move_wgds!(chain)
+        end
         log_mcmc(chain, stdout, show_trace, show_every)
     end
     return chain
@@ -139,16 +159,18 @@ function move_η!(chain::DLChain)
 end
 
 function move_rates!(chain::DLChain)
-    # TODO q update too!
+    tree = chain.Ψ
     for i in postorder(chain.Ψ)
-        prop = chain.proposals[:λ, i]
-        λi, hr1 = prop(chain[:λ,i])
-        μi, hr2 = prop(chain[:μ,i])
+        iswgdafter(chain.Ψ, i) || iswgd(chain.Ψ, i) ? continue : nothing
+        idx = tree[i,:θ]
+        prop = chain.proposals[:λ,idx]
+        λi, hr1 = prop(chain[:λ,idx])
+        μi, hr2 = prop(chain[:μ,idx])
 
         # likelihood
         d = deepcopy(chain.model)
-        d[:λ, i] = λi
-        d[:μ, i] = μi
+        d[:λ, i] = λi   # NOTE: implementation of setindex! uses node indices!
+        d[:μ, i] = μi   # NOTE: implementation of setindex! uses node indices!
         l_ = logpdf!(d, chain.X, i)
 
         # prior
@@ -162,8 +184,8 @@ function move_rates!(chain::DLChain)
         if log(rand()) < mhr
             set_L!(chain.X)    # update L matrix
             chain.model = d
-            chain[:λ, i] = λi
-            chain[:μ, i] = μi
+            chain[:λ, idx] = λi
+            chain[:μ, idx] = μi
             chain[:logp] = l_
             chain[:logπ] = p_
             prop.accepted += 1
@@ -171,6 +193,72 @@ function move_rates!(chain::DLChain)
             set_Ltmp!(chain.X)  # revert Ltmp matrix
         end
         consider_adaptation!(prop, chain.gen)
+    end
+end
+
+function move_q!(chain::DLChain)
+    tree = chain.Ψ
+    for i in wgdnodes(tree)
+        idx = tree[i,:q]
+        prop = chain.proposals[:q,idx]
+        qi, hr1 = prop(chain[:q,idx])
+
+        # prior
+        p_ = logprior(chain, :q=>(idx, qi), :bla=>9)
+
+        # likelihood
+        d = deepcopy(chain.model)
+        d[:q, i] = qi
+        l_ = logpdf!(d, chain.X, childnodes(tree,i)[1])
+
+        mhr = p_ + l_ - chain[:logπ] - chain[:logp]
+        if log(rand()) < mhr
+            set_L!(chain.X)    # update L matrix
+            chain.model = d
+            chain[:logp] = l_
+            chain[:logπ] = p_
+            chain[:q, idx] = qi
+            prop.accepted += 1
+        else
+            set_Ltmp!(chain.X)  # revert Ltmp matrix
+        end
+        consider_adaptation!(prop, chain.gen)
+    end
+end
+
+function move_wgds!(chain::DLChain)
+    tree = chain.Ψ
+    for i in wgdnodes(tree)
+        idx = tree[i,:q]
+        jdx = tree[i,:θ]
+        propq = chain.proposals[:q,idx]
+        propr = chain.proposals[:λ,jdx]
+        qi, hr1 = propq(chain[:q,idx])
+        λi, hr2 = propr(chain[:λ,jdx])
+        μi, hr3 = propr(chain[:μ,jdx])
+
+        # prior
+        p_ = logprior(chain, :q=>(idx, qi), :λ=>(jdx, λi), :μ=>(jdx, μi))
+
+        # likelihood
+        d = deepcopy(chain.model)
+        d[:q,i] = qi
+        d[:λ,i] = λi
+        d[:μ,i] = μi
+        l_ = logpdf!(d, chain.X, childnodes(tree,i)[1])
+
+        mhr = p_ + l_ - chain[:logπ] - chain[:logp] + hr2 + hr3
+        if log(rand()) < mhr
+            set_L!(chain.X)    # update L matrix
+            chain.model = d
+            chain[:logp] = l_
+            chain[:logπ] = p_
+            chain[:q, idx] = qi
+            chain[:λ, jdx] = λi
+            chain[:μ, jdx] = μi
+        else
+            set_Ltmp!(chain.X)  # revert Ltmp matrix
+        end
     end
 end
 

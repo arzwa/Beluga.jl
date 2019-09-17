@@ -32,3 +32,6 @@ addprocs(2)
 end
 
 rmprocs(workers())
+
+
+function benchmark

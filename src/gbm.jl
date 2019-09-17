@@ -62,11 +62,11 @@ function Distributions.logpdf(d::GBM{T,Ψ}, x::AbstractVector{T}) where
     tree = d.t
     logp = -log(2π)/2.0*(2*length(findleaves(tree.tree))-2)  # from Normal
     for n in preorder(tree)
-        if isleaf(tree, n)
+        if outdegree(tree.tree, n) != 2
             continue
         end
         babies = childnodes(tree, n)
-        ta = n == 1 ? 0. : distance(tree.tree, parentnode(tree, n), n) / 2.
+        ta = n == 1 ? 0. : distance(tree.tree, non_wgd_parent(tree, n), n) / 2.
         t1 = distance(tree.tree, n, babies[1])/2.
         t2 = distance(tree.tree, n, babies[2])/2.
         # determinant of the var-covar matrix Σ up to factor σ^2
@@ -75,9 +75,9 @@ function Distributions.logpdf(d::GBM{T,Ψ}, x::AbstractVector{T}) where
         tinv0 = (ta + t2) / dett
         tinv1 = tinv2 = -ta/dett
         tinv3 = (ta + t1) / dett
-        ra = x[n]
-        r1 = x[babies[1]]
-        r2 = x[babies[2]]
+        ra = x[tree[n, :θ]]
+        r1 = x[tree[babies[1], :θ]]
+        r2 = x[tree[babies[2], :θ]]
         y1 = log(r1/ra) + (ta + t1)*d.ν^2/2  # η matrix
         y2 = log(r2/ra) + (ta + t2)*d.ν^2/2
         zz = (y1*y1*tinv0 + 2*y1*y2*tinv1 + y2*y2*tinv3)
