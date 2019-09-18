@@ -13,12 +13,12 @@ end
 
 function Profile(df::DataFrame, tree::Arboreal)
     X = profile(tree, df)
-    D = Array{Profile,1}(undef, size(X)[1])
+    D = Profile[]
     n = size(X)[2]
     for i=1:size(X)[1]
-        D[i] = Profile{Float64}(X[i,:],
+        push!(D, Profile{Float64}(X[i,:],
             zeros(n, maximum(X[i,:])+1),
-            zeros(n, maximum(X[i,:])+1))
+            zeros(n, maximum(X[i,:])+1)))
     end
     distribute(D), maximum(X)
 end
