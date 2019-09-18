@@ -1,15 +1,16 @@
 module Beluga
 
-    using Distributions
-    # using BirthDeathProcesses
-    using PhyloTrees
-    using DataFrames
-    # using ForwardDiff
-    using Parameters
-    using StatsBase
     using AdaptiveMCMC
+    using DataFrames
     using Distributed
     using DistributedArrays
+    using Distributions
+    using Parameters
+    using PhyloTrees
+    using StatsBase
+    # using BirthDeathProcesses
+    # using ForwardDiff
+    # using Optim
 
     include("speciestree.jl")
     include("dlwgd.jl")
