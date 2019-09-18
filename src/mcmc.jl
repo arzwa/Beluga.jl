@@ -105,8 +105,8 @@ function mcmc!(chain::DLChain, n::Int64, args...;
     wgds = Beluga.nwgd(chain.Ψ) > 0
     for i=1:n
         chain.gen += 1
-        move_ν!(chain)
-        move_η!(chain)
+        :ν in args ? nothing : move_ν!(chain)  # could be more elegant
+        :η in args ? nothing : move_η!(chain)
         move_rates!(chain)
         if wgds
             move_q!(chain)

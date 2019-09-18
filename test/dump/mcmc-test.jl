@@ -25,8 +25,15 @@ prior = GBMRatesPrior(
     Beta(1,1),
     Beta(10,1))
 
+
+
 # NB always re-initialize p when starting a new chain!
 p, m = Profile(df, s)
 chain = DLChain(p, prior, s, m)
-chain = mcmc!(chain, 11000, show_every=10)
+chain = mcmc!(chain, 11000, :η, show_every=10)
 CSV.write("beluga-amcmc-test.csv", chain.trace)
+
+# setting equal rates in branches from the root
+s.bindex[17, :θ] = 2
+chain.model.λ = chain[:λ] = chain.model.λ[1:16]
+chain.model.μ = chain[:μ] = chain.model.μ[1:16]
