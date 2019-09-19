@@ -33,7 +33,7 @@ const PArray = DArray{Profile,1,Array{Profile,1}}
 Accumulate the logpdf along a PArray (distributed profile array).
 """
 function Distributions.logpdf!(m::PhyloBDP, p::PArray, node::Int64=-1)
-    branches = node == -1 ? m.tree.order : get_parentbranches(m.tree, node)
+    branches = node == -1 ? m.tree.order : m.tree.pbranches[node]
     mapreduce((x)->logpdf!(x.Ltmp, m, x.x, branches), +, p)
 end
 

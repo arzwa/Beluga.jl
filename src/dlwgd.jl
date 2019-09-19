@@ -17,6 +17,11 @@ Stochastic duplication-loss (DL) and whole-genome duplication (WGD) model for
 gene content evolution. This models DL as a Linear Birth-death process, and WGD
 using the Rabier model, which assumes a binomial distribution on the number of
 genes retained after WGD.
+
+Note: This implements an indexer, for an instance `m` of DuplicationLossWGD,
+`m[s, i]` gives the parameter value of parameter `s` (Symbol) for node/branch
+`i` (Int), e.g. `m[:λ, 17]` will return the duplication rate for branch 17
+(which is by convention the branch leading to node 17).
 """
 mutable struct DuplicationLossWGD{T<:Real,Ψ<:Arboreal} <: PhyloBDP
     tree::Ψ
@@ -61,7 +66,7 @@ function Base.setindex!(d::DuplicationLossWGD{T,Ψ}, v::T, s::Symbol,
     # NB: this takes a node index, not rate index!
     idx = d.tree[i, _translate(s)]
     getfield(d, s)[idx] = v
-    bs = get_parentbranches(d.tree, i)
+    bs = d.tree.pbranches[i]
     get_ϵ!(d, bs)
     get_W!(d, d.value.m, bs)
 end
@@ -325,5 +330,5 @@ function csuros_miklos!(L::Matrix{T},
     return L
 end
 
- # FIXME I don't like this
+# FIXME I don't like this
 _translate(s::Symbol) = s == :λ || s == :μ ? :θ : s

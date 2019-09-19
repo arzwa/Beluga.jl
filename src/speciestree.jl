@@ -14,24 +14,47 @@ Base.setindex!(d::BranchIndex, x::Int64, i::Int64, s::Symbol) = haskey(d, i) ?
 
 """
     SpeciesTree(tree, leaves, bindex)
+
+This maintains two important indices for inference purposes: (1) the bindex
+which links branches to indices in parameter vectors; here the θ parameter is
+probably mandatory; (2) pbranches, which links each branch to an array of
+'parent branches' (which are not strictly parent branches in the topology).
+This array for some branch `i` contains all branches that are affected by a
+change in parameters on branch `i` (i.e. those that are not conditionally
+independent of `θ` on branch `i`). Note that this is only for `θ` (i.e.
+typically (λ, μ) in the birth-death process).
 """
 struct SpeciesTree <: Arboreal
     tree::Tree
     leaves::Dict{Int64,Symbol}
     bindex::BranchIndex
+    pbranches::Dict{Int64,Array{Int64}}  # branches
     order::Array{Int64,1}
 end
 
-SpeciesTree(tree::Tree, leaves::Dict{Int64,T}) where T<:AbstractString =
-    SpeciesTree(tree, Dict(k=>Symbol(v) for (k,v) in leaves), defaultidx(tree),
-        postorder(tree))
+function SpeciesTree(tree::Tree, leaves::Dict{Int64,T}) where
+        T<:AbstractString
+    s = SpeciesTree(tree,
+            Dict(k=>Symbol(v) for (k,v) in leaves),
+            defaultidx(tree),
+            Dict{Int64,Array{Int64}}(),
+            postorder(tree))
+    set_parentbranches!(s)
+    return s
+end
+
 SpeciesTree(tree::LabeledTree) = SpeciesTree(tree.tree, tree.leaves)
 SpeciesTree(treefile::String) = SpeciesTree(readtree(treefile))
 
 defaultidx(tree) = BranchIndex(i=>Dict(:θ=>i) for (i,n) in tree.nodes)
 
 Base.getindex(Ψ::SpeciesTree, i::Int64, s::Symbol) = Ψ.bindex[i, s]
-Base.setindex!(Ψ::SpeciesTree, x::Int64, i::Int64,s::Symbol) = Ψ.bindex[i,s] = x
+
+function Base.setindex!(Ψ::SpeciesTree, x::Int64, i::Int64,s::Symbol)
+    Ψ.bindex[i,s] = x
+    set_parentbranches!(Ψ)
+end
+
 Base.length(Ψ::SpeciesTree) = length(Ψ.tree.nodes)
 Base.display(Ψ::SpeciesTree) = println("$(typeof(Ψ))($(length(Ψ)))")
 
@@ -108,14 +131,6 @@ function example_data2()
     t, M[1,:]
 end
 
-"""
-    get_parentbranches(t::SpeciesTree, node)
-
-Get the branches that should be recomputed in the dynamic programming matrix,
-given that the parameters associated with the branch leading to `node` have
-changed. Note: this is not always parent branches alone, but in case of WGD
-nodes, also the branch below the WGD node.
-"""
 function get_parentbranches(s::SpeciesTree, node::Int64)
     node = iswgd(s, node) || iswgdafter(s, node) ?
         non_wgd_child(s, node) : node
@@ -127,6 +142,26 @@ function get_parentbranches(s::SpeciesTree, node::Int64)
         n = parentnode(s.tree, n)
     end
     return [branches; [root]]
+end
+
+
+"""
+    set_parentbranches!(t::SpeciesTree)
+
+This considers the rate indices!
+"""
+function set_parentbranches!(s::SpeciesTree)
+    for n in s.order
+        idx = s[n, :θ]
+        nodes = [k for (k,v) in s.bindex if v[:θ] == idx]
+        pnodes_ = vcat([get_parentbranches(s, nn) for nn in nodes]...)
+        # may repeat nodes, keep always last instance
+        pnodes = Int64[]
+        for n in reverse(pnodes_)
+            !(n in pnodes) ? push!(pnodes, n) : continue
+        end
+        s.pbranches[n] = reverse(pnodes)
+    end
 end
 
 function non_wgd_child(tree::Arboreal, n)
