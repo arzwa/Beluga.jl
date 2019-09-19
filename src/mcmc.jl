@@ -49,6 +49,7 @@ function get_defaultproposals(x::State)
             proposals[k] = AdaptiveUnitProposal(0.2)
         end
     end
+    proposals[:ψ] = AdaptiveScaleProposal(0.5)
     return proposals
 end
 
@@ -85,6 +86,7 @@ Example: `logpdf(gbm, (Ψ=t, ν=0.2, λ=rand(17), μ=rand(17), η=0.8))`
 function logprior(d::GBMRatesPrior, θ::NamedTuple)
     @unpack Ψ, ν, λ, μ, q, η = θ
     @unpack dν, dλ, dμ, dq, dη = d
+
     lp  = logpdf(dν, ν) + logpdf(dλ, λ[1]) + logpdf(dμ, μ[1]) + logpdf(dη, η)
     lp += sum(logpdf.(dq, q))
     lp += logpdf(GBM(Ψ, λ[1], ν), λ)
@@ -120,6 +122,9 @@ Base.rand(d::LogUniform) = exp(rand(Uniform(d.a, d.b)))
 function mcmc!(chain::DLChain, n::Int64, args...;
         show_every=100, show_trace=true)
     wgds = Beluga.nwgd(chain.Ψ) > 0
+    l = logpdf!(chain.model, chain.X)
+    set_L!(chain.X)
+    chain[:logp] = l
     for i=1:n
         chain.gen += 1
         :ν in args ? nothing : move_ν!(chain)  # could be more elegant
@@ -129,6 +134,7 @@ function mcmc!(chain::DLChain, n::Int64, args...;
             move_q!(chain)
             move_wgds!(chain)
         end
+        #move_allrates!(chain)  # something fishy
         log_mcmc(chain, stdout, show_trace, show_every)
     end
     return chain
@@ -158,26 +164,24 @@ function move_η!(chain::DLChain)
 
     # likelihood
     d = deepcopy(chain.model)
-    d[:η] = η_
+    d.η = η_
     l_ = logpdf!(d, chain.X, 1)  # XXX assume root is node 1
+    # XXX actually, changing eta doesn't change the L matrix!
 
     mhr = p_ + l_ - chain[:logπ] - chain[:logp]
     if log(rand()) < mhr
-        set_L!(chain.X)    # update L matrix
         chain.model = d
         chain[:logp] = l_
         chain[:logπ] = p_
         chain[:η] = η_
         prop.accepted += 1
-    else
-        set_Ltmp!(chain.X)  # revert Ltmp matrix
     end
     consider_adaptation!(prop, chain.gen)
 end
 
 function move_rates!(chain::DLChain)
     tree = chain.Ψ
-    for i in postorder(chain.Ψ)
+    for i in chain.Ψ.order
         iswgdafter(chain.Ψ, i) || iswgd(chain.Ψ, i) ? continue : nothing
         idx = tree[i,:θ]
         prop = chain.proposals[:λ,idx]
@@ -211,6 +215,31 @@ function move_rates!(chain::DLChain)
         end
         consider_adaptation!(prop, chain.gen)
     end
+end
+
+function move_allrates!(chain::DLChain)
+    prop = chain.proposals[:ψ]
+    λ_, hr1 = prop(chain[:λ])
+    μ_, hr2 = prop(chain[:μ])
+    d = deepcopy(chain.model)
+    d.λ = λ_
+    d.μ = μ_
+    p = logprior(chain, (
+        Ψ=chain.Ψ, λ=λ_, μ=μ_, q=chain[:q], ν=chain[:ν], η=chain[:η]))
+    l = logpdf!(d, chain.X)
+    a = p + l - chain[:logπ] - chain[:logp] + hr1 + hr2
+    if log(rand()) < a
+        set_L!(chain.X)    # update L matrix
+        chain.model = d
+        chain[:λ] = λ_
+        chain[:μ] = μ_
+        chain[:logp] = l
+        chain[:logπ] = p
+        prop.accepted += 1
+    else
+        set_Ltmp!(chain.X)  # revert Ltmp matrix
+    end
+    consider_adaptation!(prop, chain.gen)
 end
 
 function move_q!(chain::DLChain)

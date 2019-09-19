@@ -53,8 +53,7 @@ end
         d_ = DuplicationLossWGD(t, d.λ, d.μ, d.q, d.η, maximum(x))
         @test all(d.value.ϵ .== d_.value.ϵ)
         @test all(d.value.W .== d_.value.W)
-        bs = get_parentbranches(t, i)
-        l1 = logpdf!(L, d, x, bs)  # partial recompute
+        l1 = logpdf!(L, d, x, t.pbranches[i])  # partial recompute
         l2, L2 = logpdf(d_, x)         # compute from scratch
         @test l1 == l2
     end

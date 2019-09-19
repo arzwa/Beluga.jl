@@ -61,7 +61,9 @@ Base.display(Ψ::SpeciesTree) = println("$(typeof(Ψ))($(length(Ψ)))")
 leafname(Ψ::SpeciesTree, i::Int64) = Ψ.leaves[i]
 leafname(d::PhyloLinearBDP, i::Int64) = leafname(d.tree, i)
 
+
 # WGD stuff
+# =========
 # NB: Wgd is assumed to be defined by having a q entry in the branch index!
 iswgd(Ψ::SpeciesTree, i::Int64) = haskey(Ψ.bindex[i], :q)
 iswgdafter(Ψ::SpeciesTree, i::Int64) = isroot(Ψ, i) ?
@@ -113,6 +115,9 @@ function profile(Ψ::SpeciesTree, df::DataFrame)
     return M
 end
 
+
+# Example data
+# ============
 function example_data1()
     s = "(D:18.03,(C:12.06,(B:7.06,A:7.06):4.99):5.97);"
     t = SpeciesTree(read_nw(s)[1:2]...)
@@ -131,20 +136,9 @@ function example_data2()
     t, M[1,:]
 end
 
-function get_parentbranches(s::SpeciesTree, node::Int64)
-    node = iswgd(s, node) || iswgdafter(s, node) ?
-        non_wgd_child(s, node) : node
-    branches = Int64[]
-    n = node
-    root = findroot(s)
-    while n != root
-        push!(branches, n)
-        n = parentnode(s.tree, n)
-    end
-    return [branches; [root]]
-end
 
-
+# Useful routines
+# ===============
 """
     set_parentbranches!(t::SpeciesTree)
 
@@ -162,6 +156,19 @@ function set_parentbranches!(s::SpeciesTree)
         end
         s.pbranches[n] = reverse(pnodes)
     end
+end
+
+function get_parentbranches(s::SpeciesTree, node::Int64)
+    node = iswgd(s, node) || iswgdafter(s, node) ?
+        non_wgd_child(s, node) : node
+    branches = Int64[]
+    n = node
+    root = findroot(s)
+    while n != root
+        push!(branches, n)
+        n = parentnode(s.tree, n)
+    end
+    return [branches; [root]]
 end
 
 function non_wgd_child(tree::Arboreal, n)

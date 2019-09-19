@@ -32,7 +32,8 @@ mutable struct DuplicationLossWGD{T<:Real,Ψ<:Arboreal} <: PhyloBDP
     value::CsurosMiklos{T}
 end
 
-function DuplicationLossWGD(tree::Ψ, λ::Vector{T}, μ::Vector{T}, q::Vector{T},
+function DuplicationLossWGD(tree::Ψ,
+        λ::Vector{T}, μ::Vector{T}, q::Vector{T},
         η::T, mmax::Int) where {Ψ<:Arboreal,T<:Real}
     ϵ = ones(T, length(tree.order), 2)
     # last dimension of W one too large, unnecessary memory...
@@ -71,15 +72,6 @@ function Base.setindex!(d::DuplicationLossWGD{T,Ψ}, v::T, s::Symbol,
     get_W!(d, d.value.m, bs)
 end
 
-# non-vector parameters require recomputation at the root only
-function Base.setindex!(d::DuplicationLossWGD{T,Ψ}, v::T,
-        s::Symbol) where {Ψ<:Arboreal,T<:Real}
-    setfield!(d, s, v)
-    bs = [findroot(d.tree)]
-    get_ϵ!(d, bs)
-    get_W!(d, d.value.m, bs)
-end
-
 
 # logpdf
 # ======
@@ -94,14 +86,16 @@ function Distributions.logpdf!(L::Matrix{T},
         d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64},
         branches::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
-    L = csuros_miklos!(L, x, d.value, d.tree, branches)
     root = branches[end]
+    if branches != [root]
+        L = csuros_miklos!(L, x, d.value, d.tree, branches)
+    end
     l = integrate_root(L[root,:], d.η, d.value.ϵ[root,2])
     try
         return l - log(condition_oib(d.tree, d.η, d.value.ϵ))
     catch
         p = condition_oib(d.tree, d.η, d.value.ϵ)
-        @error "log error: log($p) at condition_oib\n $d"
+        @error "log error: log($p) at condition_oib\n $d\n $(d.value.ϵ)"
         return -Inf
     end
 end
@@ -137,16 +131,14 @@ function get_ϵ!(model::DuplicationLossWGD, branches::Vector{Int64})
         elseif Beluga.iswgd(tree, e)
             qe = q[tree[e, :q]]
             f = childnodes(tree, e)[1]
-            #@show parentdist(tree, f)
-            #@show ep(λ[f], μ[f], parentdist(tree, f), ϵ[f, 2])
-            μf = μ[tree[f, :θ]]
-            λf = λ[tree[f, :θ]]
+            μf = model[:μ, f]
+            λf = model[:λ, f]
             ϵ[f, 1] = ep(λf, μf, parentdist(tree, f), ϵ[f, 2])
             ϵ[f, 1] = ϵ[e, 2] = qe*ϵ[f, 1]^2 + (1. - qe)*ϵ[f, 1]  # HACK?
         else
             for c in childnodes(tree, e)
-                μc = μ[tree[c, :θ]]
-                λc = λ[tree[c, :θ]]
+                μc = model[:μ, c]
+                λc = model[:λ, c]
                 ϵ[c, 1] = ep(λc, μc, parentdist(tree, c), ϵ[c, 2])
                 ϵ[e, 2] *= ϵ[c, 1]
             end
@@ -160,13 +152,14 @@ end
 # W matrix for Csuros & Miklos algorithm
 get_W!(d::DuplicationLossWGD, mmax::Int64) = get_W!(d, mmax, d.tree.order)
 
-function get_W!(model::DuplicationLossWGD, mmax::Int64, branches::Vector{Int64})
+function get_W!(model::DuplicationLossWGD, mmax::Int64,
+        branches::Vector{Int64})
     # XXX↓ WGD affects branch *below* a WGD!
     @unpack tree, λ, μ, q, η, value = model
     @unpack W, ϵ, m = value
     for i in branches[1:end-1]  # excluding root node
-        μi = μ[tree[i, :θ]]
-        λi = λ[tree[i, :θ]]
+        μi = model[:μ, i]
+        λi = model[:λ, i]
         ϵi = ϵ[i, 2]
         t = parentdist(tree, i)
         if Beluga.iswgdafter(tree, i)  # XXX↑

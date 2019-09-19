@@ -53,8 +53,7 @@ end
         d_ = DuplicationLossWGD(t, d.λ, d.μ, d.q, d.η, maximum(x))
         @test all(d.value.ϵ .== d_.value.ϵ)
         @test all(d.value.W .== d_.value.W)
-        bs = Beluga.get_parentbranches(t, i)
-        l1 = logpdf!(L, d, x, bs)  # partial recompute
+        l1 = logpdf!(L, d, x, t.pbranches[i])  # partial recompute
         l2, L2 = logpdf(d_, x)     # compute from scratch
         @test l1 == l2
     end
@@ -64,11 +63,11 @@ end
     d = deepcopy(d2)
     l, L = logpdf(d, x)
     @test isapprox(l, -11.3952503756417, atol=0.00001)
-    d[:η] = 0.9
+    d.η = 0.9
     l = logpdf!(L, d, x, [1])
     @test isapprox(l, -11.4734876141945, atol=0.00001)
     for i=1:10
-        d[:η] = rand()
+        d.η = rand()
         d_ = DuplicationLossWGD(t, d.λ, d.μ, d.q, d.η, maximum(x))
         l = logpdf!(L, d, x, [1])
         l_, L_ = logpdf(d_, x)

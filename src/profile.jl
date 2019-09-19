@@ -11,6 +11,9 @@ mutable struct Profile{V<:Real}
     Ltmp::Matrix{V}
 end
 
+Profile() = distribute(
+    Profile[Profile{Float64}(zeros(0), zeros(0,0), zeros(0,0))])
+
 function Profile(df::DataFrame, tree::Arboreal)
     X = profile(tree, df)
     D = Profile[]
@@ -33,6 +36,9 @@ const PArray = DArray{Profile,1,Array{Profile,1}}
 Accumulate the logpdf along a PArray (distributed profile array).
 """
 function Distributions.logpdf!(m::PhyloBDP, p::PArray, node::Int64=-1)
+    if length(p[1].x) == 0.  # HACK
+        return 0.
+    end
     branches = node == -1 ? m.tree.order : m.tree.pbranches[node]
     mapreduce((x)->logpdf!(x.Ltmp, m, x.x, branches), +, p)
 end
@@ -41,11 +47,11 @@ set_Ltmp!(p::PArray) = ppeval(_set_Ltmp!, p)
 set_L!(p::PArray) = ppeval(_set_L!, p)
 
 function _set_Ltmp!(p)
-    p[1].Ltmp = p[1].L
+    p[1].Ltmp = deepcopy(p[1].L)  # XXX this must be a deepcopy!!!
     0.
 end
 
 function _set_L!(p)
-    p[1].L = p[1].Ltmp
+    p[1].L = deepcopy(p[1].Ltmp)
     0.
 end
