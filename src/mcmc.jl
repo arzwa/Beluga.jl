@@ -1,4 +1,6 @@
 # Adaptive MWG-MCMC for DL(+WGD) model
+# TODO this is basically the same as in Whale; so a common abstraction layer
+# would be nice (idem for the SpeciesTree & SLicedTree)
 abstract type Chain end
 abstract type RatesPrior end
 const Prior = Union{<:Distribution,Array{<:Distribution,1},<:Real}
@@ -50,6 +52,9 @@ function get_defaultproposals(x::State)
     return proposals
 end
 
+
+# priors
+# ======
 # this is the model without correlation of λ and μ
 struct GBMRatesPrior <: RatesPrior
     dν::Prior
@@ -100,6 +105,18 @@ end
 
 logprior(c::DLChain, θ::NamedTuple) = logprior(c.priors, θ)
 
+struct LogUniform{T<:Real} <: ContinuousUnivariateDistribution
+    a::T
+    b::T
+end
+
+Distributions.logpdf(d::LogUniform, x::T) where T<:Real =
+    logpdf(Uniform(d.a, d.b), log10(x))
+
+Base.rand(d::LogUniform) = exp(rand(Uniform(d.a, d.b)))
+
+# mcmc
+# ====
 function mcmc!(chain::DLChain, n::Int64, args...;
         show_every=100, show_trace=true)
     wgds = Beluga.nwgd(chain.Ψ) > 0

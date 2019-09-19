@@ -21,5 +21,5 @@ module Beluga
     export
         SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,
         logpdf, logpdf!, Profile, PArray, set_L!, set_Ltmp!, GBM, mcmc!,
-        DLChain, GBMRatesPrior
+        DLChain, GBMRatesPrior, LogUniform
 end
