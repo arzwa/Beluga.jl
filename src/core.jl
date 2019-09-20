@@ -14,6 +14,7 @@ mutable struct CsurosMiklos{T<:Real}
     m::Int64
 end
 
+
 """
     DuplicationLossWGD(tree, λ, μ, q, η, mmax)
 
@@ -79,11 +80,18 @@ end
 
 # logpdf
 # ======
-function Distributions.logpdf(d::DuplicationLossWGD{T,Ψ},
+# returns L matrix; not generally of use; but good for testing
+function _logpdf(d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
     L = zeros(T, length(d.tree), maximum(x)+1)
     l = logpdf!(L, d, x, d.tree.order)
     l, L
+end
+
+function Distributions.logpdf(d::DuplicationLossWGD{T,Ψ},
+        x::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
+    L = zeros(T, length(d.tree), maximum(x)+1)
+    logpdf!(L, d, x, d.tree.order)  # returns only likelihood
 end
 
 function Distributions.logpdf!(L::Matrix{T},
@@ -305,13 +313,16 @@ function csuros_miklos!(L::Matrix{T},
                     # XXX is this loop as efficient as it could?
                     for n=0:_M[i+1], t=0:_M[i]
                         s = n-t
-                        p = _ϵ[i]
-                        #p = isapprox(p, one(p)) ? one(p) : p  # had some problem
                         if s < 0 || s > Mi
                             continue
                         else
+                            p = _ϵ[i]
+                            if !(zero(p) < p < one(p))
+                                @error "Invalid extinction probability ($p)"
+                                p = one(p)
+                            end
                             A[i,n+1] += pdf(Binomial(n, p), s) *
-                            A[i-1,t+1] * B[i,t+1,s+1]
+                                A[i-1,t+1] * B[i,t+1,s+1]
                         end
                     end
                     for n=0:_M[i+1]  # this is 0 ... M[i]

@@ -1,4 +1,5 @@
-# Species tree for phylogenetic birth-death models
+# Abstract PhyloCTMC
+# ==================
 abstract type PhyloCTMC <: DiscreteMultivariateDistribution end
 abstract type PhyloBDP <: PhyloCTMC end
 abstract type PhyloLinearBDP <: PhyloBDP end
@@ -12,6 +13,9 @@ Base.getindex(d::BranchIndex, i::Int64, s::Symbol) = d[i][s]
 Base.setindex!(d::BranchIndex, x::Int64, i::Int64, s::Symbol) = haskey(d, i) ?
     d[i][s] = x : d[i] = Dict(s=>x)
 
+
+# SpeciesTree type
+# ================
 """
     SpeciesTree(tree, leaves, bindex)
 
@@ -52,6 +56,7 @@ Base.getindex(Ψ::SpeciesTree, i::Int64, s::Symbol) = Ψ.bindex[i, s]
 
 function Base.setindex!(Ψ::SpeciesTree, x::Int64, i::Int64,s::Symbol)
     Ψ.bindex[i,s] = x
+    reindex!(Ψ)
     set_parentbranches!(Ψ)
 end
 
@@ -93,10 +98,10 @@ function reindex!(Ψ::SpeciesTree, s=:θ)
     for n in preorder(Ψ)
         !haskey(Ψ.bindex[n], s) ? continue : nothing
         if haskey(d, Ψ[n, s])
-            Ψ[n, s]  = d[Ψ[n, s]]
+            Ψ.bindex[n][s]  = d[Ψ.bindex[n][s]]
         else
-            d[Ψ[n, s]] = i
-            Ψ[n, s] = i
+            d[Ψ.bindex[n][s]] = i
+            Ψ.bindex[n][s] = i
             i += 1
         end
     end
