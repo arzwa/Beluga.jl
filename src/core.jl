@@ -1,7 +1,11 @@
+# This is the core; with as goal efficient methods to compute likelihood for
+# gene count profiles under the birth-death process
 # NOTE: assuming only linear BDPs
 # NOTE: assuming geometric at root could be generailzed to uniform,
 # Poisson, Negbinomial and geometric
 # NOTE: only conditioning on one in both clades currently
+# TODO: implement gain (~ Csuros & Miklos) as well
+# TODO: implement (parallel) gradient
 
 # helper struct for the Csuros & Miklos algorithm
 mutable struct CsurosMiklos{T<:Real}

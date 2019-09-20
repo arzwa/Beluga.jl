@@ -66,7 +66,7 @@ leafname(d::PhyloLinearBDP, i::Int64) = leafname(d.tree, i)
 # =========
 # NB: Wgd is assumed to be defined by having a q entry in the branch index!
 iswgd(Ψ::SpeciesTree, i::Int64) = haskey(Ψ.bindex[i], :q)
-iswgdafter(Ψ::SpeciesTree, i::Int64) = isroot(Ψ, i) ?
+iswgdafter(Ψ::SpeciesTree, i::Int64) = isroot(Ψ.tree, i) ?
     false : haskey(Ψ.bindex[parentnode(Ψ, i)], :q)
 qparent(Ψ::SpeciesTree, i::Int64) = Ψ.bindex[parentnode(Ψ, i), :q]
 nwgd(Ψ::SpeciesTree) = length(wgdnodes(Ψ))
