@@ -15,15 +15,3 @@ function gradient(d::PhyloBDP, x::AbstractVector{Int64})
     g = ForwardDiff.gradient(f, v)
     return g[:, 1]
 end
-
-# vector based constructor (to core.jl?)
-function (d::DuplicationLossWGD)(θ::Vector)
-    @unpack tree, value = d
-    η = pop!(θ)
-    q = [pop!(θ) for i=1:nwgd(d.tree)]
-    μ = [pop!(θ) for i=1:length(θ)÷2]
-    DuplicationLossWGD(tree, θ, μ, q, η, value.m)
-end
-
-# to core.jl?
-asvector(d::DuplicationLossWGD) = [d.λ ; d.μ ; d.q ; d.η ]
