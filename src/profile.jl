@@ -29,6 +29,7 @@ end
 const PArray = DArray{Profile,1,Array{Profile,1}}
 
 # TODO: will need a conversion function for handling Dual etc.
+# problem: DLModel other Real type than Profiles
 
 """
     logpdf!(m::PhyloBDP, p::PArray, [node::Int64])
@@ -42,6 +43,10 @@ function Distributions.logpdf!(m::PhyloBDP, p::PArray, node::Int64=-1)
     branches = node == -1 ? m.tree.order : m.tree.pbranches[node]
     mapreduce((x)->logpdf!(x.Ltmp, m, x.x, branches), +, p)
 end
+
+Distributions.logpdf(m::DuplicationLossWGD{T,V}, p::PArray) where
+        {T<:Real,V<:Arboreal} = mapreduce((x)->logpdf(m, x.x), +, p)
+
 
 set_Ltmp!(p::PArray) = ppeval(_set_Ltmp!, p)
 set_L!(p::PArray) = ppeval(_set_L!, p)

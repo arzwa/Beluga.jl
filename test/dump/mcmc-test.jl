@@ -13,8 +13,15 @@ prior = GBMRatesPrior(
     Beta(8,2))
 
 
-prior = GBMRatesPrior(
+prior = Beluga.IIDRatesPrior(
     Exponential(0.1),
+    Exponential(),
+    Exponential(),
+    Beta(1,1),
+    Beta(8,2))
+
+
+prior = Beluga.ExpRatesPrior(
     Exponential(),
     Exponential(),
     Beta(1,1),
@@ -30,13 +37,20 @@ prior = GBMRatesPrior(
 # chain[:ν] = 0.1
 
 s = SpeciesTree("test/data/tree1.nw")
-df = CSV.read("test/data/counts1.tsv", delim="\t")
+df = CSV.read("test/data/counts2.tsv", delim="\t")
 deletecols!(df, :Orthogroup)
 p, m = Profile(df, s)
+#p = Profile()
 chain = DLChain(p, prior, s, m)
 chain.model.λ = chain[:λ] = rand(17)
 chain.model.μ = chain[:μ] = rand(17)
-chain = mcmc!(chain, 11000, show_every=10)
+#chain[:ν] = 0.1
+chain = mcmc!(chain, 11000, :ν, show_every=10)
+
+d = DuplicationLoss(s,
+    [0.609326, 0.0317002, 0.111777, 0.69181, 0.0461885, 0.562838, 0.187973, 0.154587, 0.126413, 0.374417, 0.367792, 0.0472703, 0.039286, 1.64182, 0.689439, 0.171681, 0.168145],
+    [0.0134613, 1.50559, 1.8343, 0.169876, 0.361917, 0.282899, 0.0131346, 0.214978, 0.766745, 0.469999, 0.0635182, 0.187134, 0.711814, 0.0637716, 0.984191, 0.951305, 11.9708],  0.7235804910286543, m
+     )
 
 chain2 = deepcopy(chain)
 

@@ -77,13 +77,14 @@ function Base.setindex!(d::DuplicationLossWGD{T,Ψ}, v::T, s::Symbol,
     get_W!(d, d.value.m, bs)
 end
 
-# vector based constructor (to core.jl?)
-function (d::DuplicationLossWGD)(θ::Vector)
+# vector based constructor
+function (d::DuplicationLossWGD)(θ::Vector, η=θ[end])
     @unpack tree, value = d
-    η = pop!(θ)
-    q = [pop!(θ) for i=1:nwgd(d.tree)]
-    μ = [pop!(θ) for i=1:length(θ)÷2]
-    DuplicationLossWGD(tree, θ, μ, q, η, value.m)
+    n = nrates(d.tree)
+    q = θ[2n+1:end-1]
+    λ = θ[1:n]
+    μ = θ[n+1:2n]
+    DuplicationLossWGD(tree, λ, μ, q, η, value.m)
 end
 
 asvector(d::DuplicationLossWGD) = [d.λ ; d.μ ; d.q ; d.η ]
@@ -96,7 +97,7 @@ function _logpdf(d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
     L = zeros(T, length(d.tree), maximum(x)+1)
     l = logpdf!(L, d, x, d.tree.order)
-    l, L
+    (l=l, L=L)
 end
 
 function Distributions.logpdf(d::DuplicationLossWGD{T,Ψ},
@@ -109,18 +110,14 @@ function Distributions.logpdf!(L::Matrix{T},
         d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64},
         branches::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
+    @unpack tree, value, η = d
     root = branches[end]
     if branches != [root]
-        L = csuros_miklos!(L, x, d.value, d.tree, branches)
+        csuros_miklos!(L, x, value, tree, branches)
     end
-    l = integrate_root(L[root,:], d.η, d.value.ϵ[root,2])
-    try
-        return l - log(condition_oib(d.tree, d.η, d.value.ϵ))
-    catch
-        p = condition_oib(d.tree, d.η, d.value.ϵ)
-        @error "log error: log($p) at condition_oib\n $d\n $(d.value.ϵ)"
-        return -Inf
-    end
+    l = integrate_root(L[root,:], η, value.ϵ[root,2])
+    l -= log(condition_oib(tree, η, value.ϵ))
+    return isinf(l) ? -Inf : l
 end
 
 # Different interface (than profile) to compute the accumulated logpdf over
@@ -229,6 +226,7 @@ end
 
 # root integration and conditioning
 # =================================
+# NOTE: Here (both functions) is where most of the numerical problems appear
 function integrate_root(L::Vector{T}, η::T, ϵ::T) where T<:Real
     # XXX L not in log scale !
     p = 0.
@@ -240,20 +238,20 @@ function integrate_root(L::Vector{T}, η::T, ϵ::T) where T<:Real
         return log(p)
     catch
         @error "log error: log($p);\n L = $L\n at integrate_root"
+        return isapprox(p, zero(p)) ? -Inf : NaN
     end
 end
 
 function condition_oib(tree::Arboreal, η::T, ϵ::Matrix{T}) where T<:Real
     e = findroot(tree)
     f, g  = childnodes(tree, e)
-    #root = geometric_extinctionp(ϵ[e, 2], η)
     left = geometric_extinctionp(ϵ[f, 1], η)
     rght = geometric_extinctionp(ϵ[g, 1], η)
-    #1. - left - rght + root
-    p = (1. -left)*(1. -rght)
-    #p = isapprox(p, zero(p), atol=1e-12) ? zero(p) : p  # XXX had some issues
-    if p > 1. || p < 0.
-        @error "Conditional yields no probability: $p = (1-$left) (1-$rght) (η = $η, ϵleft = $(ϵ[f, 1]), ϵright = ϵ[g, 1])"
+    if isapprox(left, one(left)) || isapprox(rght, one(rght))
+        @warn "Extinction probability in one of both lineages at root ≈ 1"
+        p = zero(left)
+    else
+        p = (1. -left)*(1. -rght)
     end
     return p
 end
@@ -349,7 +347,6 @@ function csuros_miklos!(L::Matrix{T},
             end
         end
     end
-    return L
 end
 
 # FIXME I don't like this

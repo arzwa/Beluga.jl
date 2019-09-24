@@ -6,13 +6,13 @@ using Beluga
 s = SpeciesTree("data/tree1.nw")
 df = CSV.read("data/counts1.tsv", delim="\t")
 deletecols!(df, :Orthogroup)
-M = profile(s, df)
+p, m = Profile(df, s)
 
 @testset "Single family" begin
     s_ = deepcopy(s)
     Beluga.set_constantrates!(s_)
-    d = DLModel(s_, maximum(M), 0.002, 0.003)
-    d, out = mle(d, M[2, :], show_trace=false)
+    d = DuplicationLoss(s_, [0.002], [0.003], 0.8, m)
+    d, out = mle(d, p[2], show_trace=false)
     @test d[1].λ ≈ 0.18368227181154387
     @test d[1].μ ≈ 0.09288814282687102
     d, out = mle(d, M[4, :],  show_trace=false)

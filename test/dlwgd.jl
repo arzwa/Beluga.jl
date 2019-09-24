@@ -1,4 +1,4 @@
-using Test, Beluga, PhyloTrees
+using Test, Beluga, PhyloTrees, Parameters
 import Beluga: _logpdf
 
 t, x = Beluga.example_data2()
@@ -29,7 +29,7 @@ end
 
 @testset "Conditional survival likelihood (DL+WGD)" begin
     # Verified with WGDgc (16/09/2019)
-    l, L = _logpdf(d1, x)
+    @unpack l, L = _logpdf(d1, x)
     L = log.(L)
     shouldbe = [-Inf, -12.6372, -10.112, -8.97727, -8.59388, -8.72674,
         -9.29184, -10.2568, -11.6216, -13.4219, -15.753, -18.8843]
@@ -37,7 +37,7 @@ end
         @test isapprox(L[1, i] , shouldbe[i], atol=0.0001)
     end
 
-    l, L = _logpdf(d2, x)
+    @unpack l, L = _logpdf(d2, x)
     L = log.(L)
     shouldbe = [-Inf, -14.2131, -12.2466, -12.2982, -13.3171, -14.931,
         -17.0352, -19.5772, -22.5452, -25.9652, -29.9266, -34.6961]
@@ -49,20 +49,20 @@ end
 @testset "Partial recomputation (DL+WGD)" begin
     for i in d1.tree.order
         d = deepcopy(d1)
-        l, L = _logpdf(d1, x)  # get 'precomputed' L matrix
+        @unpack l, L = _logpdf(d1, x)  # get 'precomputed' L matrix
         d[:λ, i] = rand()
         d_ = DuplicationLossWGD(t, d.λ, d.μ, d.q, d.η, maximum(x))
         @test all(d.value.ϵ .== d_.value.ϵ)
         @test all(d.value.W .== d_.value.W)
         l1 = logpdf!(L, d, x, t.pbranches[i])  # partial recompute
-        l2, L2 = _logpdf(d_, x)     # compute from scratch
-        @test l1 == l2
+        l2 = _logpdf(d_, x)     # compute from scratch
+        @test l1 == l2.l
     end
 end
 
 @testset "Root posterior with geometric prior (DL+WGD)" begin
     d = deepcopy(d2)
-    l, L = _logpdf(d, x)
+    @unpack l, L = _logpdf(d, x)
     @test isapprox(l, -11.3952503756417, atol=0.00001)
     d.η = 0.9
     l = logpdf!(L, d, x, [1])
@@ -71,7 +71,7 @@ end
         d.η = rand()
         d_ = DuplicationLossWGD(t, d.λ, d.μ, d.q, d.η, maximum(x))
         l = logpdf!(L, d, x, [1])
-        l_, L_ = _logpdf(d_, x)
-        @test l ≈ l_
+        l_ = _logpdf(d_, x)
+        @test l ≈ l_.l
     end
 end

@@ -100,12 +100,29 @@ function mcmc!(chain::DLChain, priors::ConstantRatesPrior,
     return chain
 end
 
-function mcmc!(chain::DLChain, priors::GBMRatesPrior,
+function mcmc!(chain::DLChain, priors::Union{GBMRatesPrior,IIDRatesPrior},
         n, show_trace, show_every, args...)
     wgds = Beluga.nwgd(chain.Ψ) > 0
     init_mcmc!(chain)
     for i=1:n
         :ν in args ? nothing : move_ν!(chain)  # could be more elegant
+        :η in args ? nothing : move_η!(chain)
+        move_rates!(chain)
+        if wgds
+            move_q!(chain)
+            move_wgds!(chain)
+        end
+        #move_allrates!(chain)  # something fishy
+        log_mcmc!(chain, stdout, show_trace, show_every)
+    end
+    return chain
+end
+
+function mcmc!(chain::DLChain, priors::ExpRatesPrior,
+        n, show_trace, show_every, args...)
+    wgds = Beluga.nwgd(chain.Ψ) > 0
+    init_mcmc!(chain)
+    for i=1:n
         :η in args ? nothing : move_η!(chain)
         move_rates!(chain)
         if wgds
