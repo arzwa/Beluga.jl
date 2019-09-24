@@ -30,7 +30,7 @@ prior = GBMRatesPrior(
 # chain[:ν] = 0.1
 
 s = SpeciesTree("test/data/tree1.nw")
-df = CSV.read("test/data/counts2.tsv", delim="\t")
+df = CSV.read("test/data/counts1.tsv", delim="\t")
 deletecols!(df, :Orthogroup)
 p, m = Profile(df, s)
 chain = DLChain(p, prior, s, m)
@@ -38,6 +38,7 @@ chain.model.λ = chain[:λ] = rand(17)
 chain.model.μ = chain[:μ] = rand(17)
 chain = mcmc!(chain, 11000, show_every=10)
 
+chain2 = deepcopy(chain)
 
 s = SpeciesTree("test/data/tree2.nw")
 s[3, :q] = 1

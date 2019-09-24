@@ -4,20 +4,20 @@ abstract type Model end
 
 const State = Dict{Symbol,Union{Vector{<:Real},<:Real}}
 
-mutable struct MixturePhyloBDPChain{T<:Model,V<:DLModel} <: Chain
-    tree::SpeciesTree
+struct Cluster
+    model::DuplicationLossWGD
     state::State
-    bdps::Array{V,1}
-    prior::T
-    proposals::Array{Proposals,1}
-    gen::Int64
-    trace::Array
+    proposals::Proposals
 end
 
-Base.getindex(c::Chain, s::Symbol) = c.state[s]
-Base.getindex(c::Chain, s::Symbol, i::Int64) = c.state[s][i]
-Base.setindex!(c::Chain, v, s::Symbol) = c.state[s] = v
-Base.setindex!(c::Chain, v, s::Symbol, i::Int64) = c.state[s][i] = v
+mutable struct MixturePhyloBDPChain{T<:Model,V<:DLModel} <: Chain
+    X::PArray
+    tree::SpeciesTree
+    priors::RatesPrior
+    clusters::Array{Cluster,1}
+    trace::DataFrame
+    gen::Int64
+end
 
 # DP mixture model with constant rates and no WGDs.
 struct ConstantDPModel{T<:Real} <: Model

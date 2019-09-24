@@ -252,6 +252,9 @@ function condition_oib(tree::Arboreal, η::T, ϵ::Matrix{T}) where T<:Real
     #1. - left - rght + root
     p = (1. -left)*(1. -rght)
     #p = isapprox(p, zero(p), atol=1e-12) ? zero(p) : p  # XXX had some issues
+    if p > 1. || p < 0.
+        @error "Conditional yields no probability: $p = (1-$left) (1-$rght) (η = $η, ϵleft = $(ϵ[f, 1]), ϵright = ϵ[g, 1])"
+    end
     return p
 end
 
