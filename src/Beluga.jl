@@ -21,10 +21,11 @@ module Beluga
     include("priors.jl")
     include("mcmc.jl")
     include("gradient.jl")
+    include("mle.jl")
 
     export
         SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,
         logpdf, logpdf!, Profile, PArray, set_L!, set_Ltmp!, GBM, mcmc!,
         DLChain, GBMRatesPrior, LogUniform, ConstantRatesPrior, ExpRatesPrior,
-        IIDRatesPrior, nrates, nwgd, gradient
+        IIDRatesPrior, nrates, nwgd, gradient, mle
 end

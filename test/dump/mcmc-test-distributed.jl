@@ -2,8 +2,9 @@ using CSV
 using DataFrames
 using Distributed
 using Distributions
-using DistributedArrays
-using Beluga
+addprocs(2)
+@everywhere using DistributedArrays
+@everywhere using Beluga
 
 # NB always re-initialize p when starting a new chain!
 prior1 = GBMRatesPrior(
@@ -31,9 +32,12 @@ s = SpeciesTree("test/data/plants1.nw")
 df = CSV.read("test/data/plants1-10.tsv", delim=",")
 deletecols!(df, :Orthogroup)
 p, m = Profile(df, s)
-chain = DLChain(p, prior2, s, m)
-mcmc!(chain, 11000, show_every=100)
-
+#p = Profile()
+chains = [DLChain(p, prior2, s, m) for i=1:2]
+for chain in chains
+    chain[:ν] = 0.1
+end
+pmap((x) -> mcmc!(x, 11000, :ν, show_every=10), chains)
 
 chain2 = deepcopy(chain)
 

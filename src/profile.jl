@@ -20,8 +20,8 @@ function Profile(df::DataFrame, tree::Arboreal)
     n = size(X)[2]
     for i=1:size(X)[1]
         push!(D, Profile{Float64}(X[i,:],
-            zeros(n, maximum(X[i,:])+1),
-            zeros(n, maximum(X[i,:])+1)))
+            minfs(Float64, n, maximum(X[i,:])+1),
+            minfs(Float64, n, maximum(X[i,:])+1)))
     end
     distribute(D), maximum(X)
 end

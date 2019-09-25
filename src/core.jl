@@ -6,6 +6,7 @@
 # NOTE: only conditioning on one in both clades currently
 # TODO: implement gain (~ Csuros & Miklos) as well
 # TODO: implement (parallel) gradient
+# NOTE: as of 25/09/2019, everything is on log-scale
 
 # helper struct for the Csuros & Miklos algorithm
 mutable struct CsurosMiklos{T<:Real}
@@ -42,7 +43,7 @@ function DuplicationLossWGD(tree::Ψ,
         η::T, mmax::Int) where {Ψ<:Arboreal,T<:Real}
     ϵ = ones(T, length(tree.order), 2)
     # last dimension of W one too large, unnecessary memory...
-    W = zeros(eltype(λ), mmax+1, mmax+1, maximum(tree.order))
+    W = minfs(T, mmax+1, mmax+1, maximum(tree.order))
     c = CsurosMiklos(W, ϵ, mmax)
     d = DuplicationLossWGD{T,Ψ}(tree, λ, μ, q, η, c)
     get_ϵ!(d)
@@ -94,14 +95,14 @@ asvector(d::DuplicationLossWGD) = [d.λ ; d.μ ; d.q ; d.η ]
 # returns L matrix; not generally of use; but good for testing
 function _logpdf(d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
-    L = log.(zeros(T, length(d.tree), maximum(x)+1))
+    L = minfs(T, length(d.tree), maximum(x)+1)
     l = logpdf!(L, d, x, d.tree.order)
     (l=l, L=L)
 end
 
 function Distributions.logpdf(d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
-    L = zeros(T, length(d.tree), maximum(x)+1)
+    L = minfs(T, length(d.tree), maximum(x)+1)
     logpdf!(L, d, x, d.tree.order)  # returns only likelihood
 end
 
@@ -109,26 +110,23 @@ function Distributions.logpdf!(L::Matrix{T},
         d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64},
         branches::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
+    @unpack value, tree, η = d
     root = branches[end]
     if branches != [root]
-        L = csuros_miklos!(L, x, d.value, d.tree, branches)
+        L = csuros_miklos!(L, x, value, tree, branches)
     end
-    l = integrate_root(L[root,:], d.η, d.value.ϵ[root,2])
-    try
-        return l - log(condition_oib(d.tree, d.η, d.value.ϵ))
-    catch
-        p = condition_oib(d.tree, d.η, d.value.ϵ)
-        @error "log error: log($p) at condition_oib\n $d\n $(d.value.ϵ)"
-        return -Inf
-    end
+    l = integrate_root(L[root,:], η, value.ϵ[root,2])
+    l -= condition_oib(tree, η, value.ϵ)
+    isinf(l) ? -Inf : l  # FIXME; shouldn't be necessary
 end
 
 # Different interface (than profile) to compute the accumulated logpdf over
 # multiple phylogenetic profiles, note that it is in fact slower than the
 # Profile approach
-function Distributions.logpdf(d::DuplicationLossWGD, X::AbstractMatrix{Int64})
+function Distributions.logpdf(d::DuplicationLossWGD{T,Ψ},
+        X::AbstractMatrix{Int64}) where {Ψ<:Arboreal,T<:Real}
     m = maximum(X)
-    L = zeros(size(X)..., m+1)
+    L = minfs(T, size(X)..., m+1)
     l = @inbounds @distributed (+) for i=1:size(X)[1]
         logpdf!(L[i,:,:], d, X[i,:], d.tree.order)
     end
@@ -144,6 +142,9 @@ function get_ϵ!(model::DuplicationLossWGD, branches::Vector{Int64})
     # Extinction probabilities, ϵ[node, 2] is the extinction P at the end of the
     # branch leading to `node`, ϵ[node, 1] is the extinction P at the beginning
     # of the branch leading to `node`.
+    # NOTE: it is probably not really necessary to work on a log-scale here
+    # as the p's don't get *really* small in general; but it doesn't lead
+    # to less efficient code anyway
     @unpack tree, λ, μ, q, η, value = model
     @unpack W, ϵ, m = value
     ϵ[1,1] = NaN  # root has only one extinction P, NaN for safety
@@ -180,14 +181,13 @@ get_W!(d::DuplicationLossWGD, mmax::Int64) = get_W!(d, mmax, d.tree.order)
 
 function get_W!(model::DuplicationLossWGD, mmax::Int64,
         branches::Vector{Int64})
-    # XXX should we take this to a log scale?
     # XXX↓ WGD affects branch *below* a WGD!
     @unpack tree, λ, μ, q, η, value = model
     @unpack W, ϵ, m = value
     for i in branches[1:end-1]  # excluding root node
         μi = model[:μ, i]
         λi = model[:λ, i]
-        ϵi = exp(ϵ[i, 2])
+        ϵi = ϵ[i, 2]
         t = parentdist(tree, i)
         if Beluga.iswgdafter(tree, i)  # XXX↑
             qi = q[Beluga.qparent(tree, i)]
@@ -200,32 +200,51 @@ end
 
 function _wstar(t, λ, μ, ϵ, mmax::Int64)
     # compute w* (Csuros Miklos 2009)
-    ϕ = getϕ(t, λ, μ)  # p
-    ψ = getψ(t, λ, μ)  # q
-    _n = 1. - ψ*ϵ
-    ϕp = (ϕ*(1. - ϵ) + (1. - ψ)*ϵ) / _n
-    ψp = ψ*(1. - ϵ) / _n
-    w = zeros(typeof(λ), mmax+1, mmax+1)
-    w[1,1] = 1.
+    # ϕ = getϕ(t, λ, μ)  # p
+    # ψ = getψ(t, λ, μ)  # q
+    # _n = 1. - ψ*ϵ
+    # ϕp = (ϕ*(1. - ϵ) + (1. - ψ)*ϵ) / _n
+    # ψp = ψ*(1. - ϵ) / _n
+    # w[1,1] = 1.
+    # w = zeros(typeof(λ), mmax+1, mmax+1)
+    ϕ = log(getϕ(t, λ, μ))  # p
+    ψ = log(getψ(t, λ, μ))  # q
+    _n = log1mexp(ψ+ϵ)
+    ϕp = logaddexp(ϕ+log1mexp(ϵ), log1mexp(ψ)+ϵ) - _n
+    ψp = ψ+log1mexp(ϵ) - _n
+    w = minfs(typeof(λ), mmax+1, mmax+1)
+    w[1,1] = 0.
     for m=1:mmax, n=1:m
-        w[n+1, m+1] = ψp*w[n+1, m] + (1. - ϕp)*(1. - ψp)*w[n, m]
+        # w[n+1, m+1] = ψp*w[n+1, m] + (1. - ϕp)*(1. - ψp)*w[n, m]
+        w[n+1, m+1] = logaddexp(ψp + w[n+1, m],
+            log1mexp(ϕp) + log1mexp(ψp) + w[n, m])
     end
     return w
 end
 
 function _wstar_wgd(t, λ, μ, q, ϵ, mmax::Int64)
     # compute w* (Csuros Miklos 2009)
-    ϕ = getϕ(t, λ, μ)  # p
-    ψ = getψ(t, λ, μ)  # q
-    _n = 1. - ψ*ϵ
-    ϕp = (ϕ*(1. - ϵ) + (1. - ψ)*ϵ) / _n
-    ψp = ψ*(1. - ϵ) / _n
-    w = zeros(typeof(λ), mmax+1, mmax+1)
-    w[1,1] = 1.
-    w[2,2] = ((1. - q) + 2q*ϵ)*(1. - ϵ)
-    w[2,3] = q*(1. - ϵ)^2
+    # ϕ = getϕ(t, λ, μ)  # p
+    # ψ = getψ(t, λ, μ)  # q
+    # _n = 1. - ψ*ϵ
+    # ϕp = (ϕ*(1. - ϵ) + (1. - ψ)*ϵ) / _n
+    # ψp = ψ*(1. - ϵ) / _n
+    # w = zeros(typeof(λ), mmax+1, mmax+1)
+    # w[1,1] = 1.
+    # w[2,2] = ((1. - q) + 2q*ϵ)*(1. - ϵ)
+    # w[2,3] = q*(1. - ϵ)^2
+    ϕ = log(getϕ(t, λ, μ))  # p
+    ψ = log(getψ(t, λ, μ))  # q
+    _n = log1mexp(ψ+ϵ)
+    ϕp = logaddexp(ϕ+log1mexp(ϵ), log1mexp(ψ)+ϵ) - _n
+    ψp = ψ+log1mexp(ϵ) - _n
+    w = minfs(typeof(λ), mmax+1, mmax+1)
+    w[1,1] = 0.
+    w[2,2] = logaddexp(log(1. - q), log(2q)+ϵ) + log1mexp(ϵ)
+    w[2,3] = log(q) + 2*log1mexp(ϵ)
     for i=1:mmax, j=2:mmax
-        w[i+1, j+1] =  w[2,2]*w[i, j] + w[2,3]*w[i, j-1]
+        # w[i+1, j+1] =  w[2,2]*w[i, j] + w[2,3]*w[i, j-1]
+        w[i+1, j+1] = logaddexp(w[2,2] + w[i, j], w[2,3] + w[i, j-1])
     end
     return w
 end
@@ -233,40 +252,39 @@ end
 
 # root integration and conditioning
 # =================================
+# this integrates the conditional probability at the root over the prior
+# i.e. P(X) = Σₙ P(X|nroot=n)P(nroot=n)
 function integrate_root(L::Vector{T}, η::T, ϵ::T) where T<:Real
     p = -Inf
     for i in 2:length(L)
-        #f = (1. - ϵ)^(i-1)*η*(1. -η)^(i-2)/(1. -(1. -η)*ϵ)^i
-        f = (i-1)*log1mexp(ϵ) + log(η) + (i-2)*log(1. - η) - i*log1mexp(
-            log(1. - η)+ϵ)
-        #p = logaddexp(p, L[i] + log(f))
+        f = (i-1)*log1mexp(ϵ) + log(η) + (i-2)*log(1. - η)
+        f -= i*log1mexp(log(1. - η)+ϵ)
         p = logaddexp(p, L[i] + f)
     end
     return p
-    # try
-    #     return log(p)
-    # catch
-    #     @error "log error: log($p);\n L = $L\n at integrate_root"
-    # end
 end
 
+# conditioning factor, i.e. the probability that a family is not extinct in
+# both lineages setmming from the root
 function condition_oib(tree::Arboreal, η::T, ϵ::Matrix{T}) where T<:Real
     e = findroot(tree)
     f, g  = childnodes(tree, e)
-    #root = geometric_extinctionp(ϵ[e, 2], η)
-    left = geometric_extinctionp(exp(ϵ[f, 1]), η)
-    rght = geometric_extinctionp(exp(ϵ[g, 1]), η)
-    #1. - left - rght + root
-    p = (1. -left)*(1. -rght)
-    #p = isapprox(p, zero(p), atol=1e-12) ? zero(p) : p  # XXX had some issues
-    if p > 1. || p < 0.
-        @error "Conditional yields no probability: $p = (1-$left) (1-$rght) (η = $η, ϵleft = $(ϵ[f, 1]), ϵright = ϵ[g, 1])"
+    lη = log(η)
+    left = geometric_extinctionp(ϵ[f, 1], lη)
+    rght = geometric_extinctionp(ϵ[g, 1], lη)
+    p = try
+        log1mexp(left) + log1mexp(rght)
+    catch
+        # XXX I had numerical issues here (with some data sets?)
+        @error "Invalid P's at `condition_oib` \nleft = $left, right = $rght"
+        -Inf
     end
     return p
 end
 
-geometric_extinctionp(ϵ::T, η::T) where T<:Real = η*ϵ/(1. - (1. - η)*ϵ)
+#geometric_extinctionp(ϵ::T, η::T) where T<:Real = η*ϵ/(1. - (1. - η)*ϵ)
 geometric_extinctionp(ϵ::Real, η::Real)=geometric_extinctionp(promote(ϵ, η)...)
+geometric_extinctionp(ϵ::T, η::T) where T<:Real = η + ϵ -log1mexp(log1mexp(η)+ϵ)
 
 
 # BDP utilities
@@ -302,7 +320,6 @@ function csuros_miklos!(L::Matrix{T},
         matrices::CsurosMiklos{T},
         tree::Arboreal,
         branches::Array{Int64}) where T<:Real
-    # TODO: maybe get ϵ and W also on log scales; not sure if it would matter
     @unpack W, ϵ, m = matrices
     mx = maximum(x)
 
@@ -315,15 +332,16 @@ function csuros_miklos!(L::Matrix{T},
             _M = cumsum([0 ; Mc])
             #_ϵ = cumprod([1.; [ϵ[c, 1] for c in children]])
             _ϵ = cumsum([0.; [ϵ[c, 1] for c in children]])
-            # FIXME, fill(-Inf, dims) would be nicer, but not in correct type
-            B = log.(zeros(eltype(_ϵ), length(children), _M[end]+1, mx+1))
-            A = log.(zeros(eltype(_ϵ), length(children), _M[end]+1))
+            B = minfs(eltype(_ϵ), length(children), _M[end]+1, mx+1)
+            A = minfs(eltype(_ϵ), length(children), _M[end]+1)
             for i = 1:length(children)
                 c = children[i]
                 Mi = Mc[i]
 
-                # XXX this line makes using W on log scale tricky
-                B[i, 1, :] = log.(W[1:mx+1, 1:mx+1, c] * exp.(L[c, 1:mx+1]))
+                #B[i, 1, :] = log.(W[1:mx+1, 1:mx+1, c] * exp.(L[c, 1:mx+1]))
+                B[i, 1, :] = log.(exp.(W[1:mx+1,1:mx+1,c]) * exp.(L[c,1:mx+1]))
+                # ↑ take this for W on log scale
+
                 for t=1:_M[i], s=0:Mi  # this is 0...M[i-1] & 0...Mi
                     if s == Mi
                         # B[i,t+1,s+1] = B[i,t,s+1] + log(ϵ[c,1])
@@ -374,3 +392,8 @@ end
 
 # FIXME I don't like this
 _translate(s::Symbol) = s == :λ || s == :μ ? :θ : s
+
+# initialize matrix of dimensions `dims` with -Inf
+minfs(::Type{T}, dims::Tuple{}) where T<:Real = Array{T}(fill(-Inf, dims))
+minfs(::Type{T}, dims::Union{Integer, AbstractUnitRange}...) where T<:Real =
+    Array{T}(fill(-Inf, dims))

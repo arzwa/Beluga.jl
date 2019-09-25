@@ -19,7 +19,7 @@ end
 
 @testset "Transition probabilities (W matrix) (DL+WGD)" begin
     # tested with WGDgc (14/09/2019)
-    W = d1.value.W
+    W = exp.(d1.value.W)
     shouldbe = [0.0, 0.000668201, 0.00671049, 0.0133832, 0.00754552,
         0.00314674, 0.0107602, 0.0149398, 0.0149398]
     for i=1:length(shouldbe)

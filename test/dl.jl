@@ -9,7 +9,7 @@ d1 = DuplicationLossWGD(t, λ, μ, Float64[], 1/1.5, maximum(x))
 d2 = DuplicationLossWGD(t, λ .+ 0.3, μ .+ 0.2, Float64[], 1/1.5, maximum(x))
 
 @testset "Transition probabilities (W matrix) (DL)" begin
-    W = d1.value.W
+    W = exp.(d1.value.W)
     @test W[2,2,2] ≈ 0.02311089901980
     @test W[3,4,2] ≈ 0.00066820098326
     @test W[3,4,3] ≈ 0.00433114903942
