@@ -11,7 +11,7 @@ d2 = DuplicationLossWGD(t, λ .+ 0.3, μ .+ 0.2, [0.2], 1/1.5, maximum(x))
     # tested with WGDgc (14/09/2019)
     e = findroot(d1.tree)
     f, g = childnodes(d1.tree, e)
-    ϵ = d1.value.ϵ
+    ϵ = exp.(d1.value.ϵ)
     @test ϵ[e, 2] ≈ 0.778372527869781
     @test ϵ[f, 1] ≈ 0.938284827880156
     @test ϵ[g, 1] ≈ 0.829569555790793
@@ -30,7 +30,7 @@ end
 @testset "Conditional survival likelihood (DL+WGD)" begin
     # Verified with WGDgc (16/09/2019)
     @unpack l, L = _logpdf(d1, x)
-    L = log.(L)
+    #L = log.(L)
     shouldbe = [-Inf, -12.6372, -10.112, -8.97727, -8.59388, -8.72674,
         -9.29184, -10.2568, -11.6216, -13.4219, -15.753, -18.8843]
     for i=1:length(L[1,:])
@@ -38,7 +38,7 @@ end
     end
 
     @unpack l, L = _logpdf(d2, x)
-    L = log.(L)
+    #L = log.(L)
     shouldbe = [-Inf, -14.2131, -12.2466, -12.2982, -13.3171, -14.931,
         -17.0352, -19.5772, -22.5452, -25.9652, -29.9266, -34.6961]
     for i=1:length(L[1,:])

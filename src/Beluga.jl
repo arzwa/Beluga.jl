@@ -9,8 +9,10 @@ module Beluga
     using PhyloTrees
     using StatsBase
     using ForwardDiff
+    using Optim
+    using CSV
+    import StatsFuns: logaddexp, log1mexp, log1pexp
     # using BirthDeathProcesses
-    # using Optim
 
     include("speciestree.jl")
     include("core.jl")

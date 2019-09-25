@@ -94,9 +94,9 @@ asvector(d::DuplicationLossWGD) = [d.λ ; d.μ ; d.q ; d.η ]
 # returns L matrix; not generally of use; but good for testing
 function _logpdf(d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
-    L = zeros(T, length(d.tree), maximum(x)+1)
+    L = log.(zeros(T, length(d.tree), maximum(x)+1))
     l = logpdf!(L, d, x, d.tree.order)
-    l, L
+    (l=l, L=L)
 end
 
 function Distributions.logpdf(d::DuplicationLossWGD{T,Ψ},
@@ -148,22 +148,25 @@ function get_ϵ!(model::DuplicationLossWGD, branches::Vector{Int64})
     @unpack W, ϵ, m = value
     ϵ[1,1] = NaN  # root has only one extinction P, NaN for safety
     for e in branches
-        ϵ[e,:] .= 1.
+        ϵ[e,:] .= 0.
         if isleaf(tree, e)
-            ϵ[e, 2] = zero(eltype(ϵ))
+            ϵ[e, 2] = log(zero(eltype(ϵ)))
         elseif Beluga.iswgd(tree, e)
             qe = q[tree[e, :q]]
             f = childnodes(tree, e)[1]
             μf = model[:μ, f]
             λf = model[:λ, f]
-            ϵ[f, 1] = ep(λf, μf, parentdist(tree, f), ϵ[f, 2])
-            ϵ[f, 1] = ϵ[e, 2] = qe*ϵ[f, 1]^2 + (1. - qe)*ϵ[f, 1]  # HACK?
+            t = parentdist(tree, f)
+            ϵ[f, 1] = log(ep(λf, μf, t, exp(ϵ[f, 2])))  # XXX pass log ϵ?
+            ϵ[f, 1] = ϵ[e, 2] = logaddexp(
+                log(qe)+2*ϵ[f, 1], log(1. - qe)+ϵ[f, 1])  # HACK?
         else
             for c in childnodes(tree, e)
                 μc = model[:μ, c]
                 λc = model[:λ, c]
-                ϵ[c, 1] = ep(λc, μc, parentdist(tree, c), ϵ[c, 2])
-                ϵ[e, 2] *= ϵ[c, 1]
+                t = parentdist(tree, c)
+                ϵ[c, 1] = log(ep(λc, μc, t, exp(ϵ[c, 2]))) # XXX pass log ϵ?
+                ϵ[e, 2] += ϵ[c, 1]
             end
         end
     end
@@ -184,7 +187,7 @@ function get_W!(model::DuplicationLossWGD, mmax::Int64,
     for i in branches[1:end-1]  # excluding root node
         μi = model[:μ, i]
         λi = model[:λ, i]
-        ϵi = ϵ[i, 2]
+        ϵi = exp(ϵ[i, 2])
         t = parentdist(tree, i)
         if Beluga.iswgdafter(tree, i)  # XXX↑
             qi = q[Beluga.qparent(tree, i)]
@@ -231,25 +234,28 @@ end
 # root integration and conditioning
 # =================================
 function integrate_root(L::Vector{T}, η::T, ϵ::T) where T<:Real
-    # XXX L not in log scale !
-    p = 0.
+    p = -Inf
     for i in 2:length(L)
-        f = (1. - ϵ)^(i-1)*η*(1. -η)^(i-2)/(1. -(1. -η)*ϵ)^i
-        p += L[i] * f
+        #f = (1. - ϵ)^(i-1)*η*(1. -η)^(i-2)/(1. -(1. -η)*ϵ)^i
+        f = (i-1)*log1mexp(ϵ) + log(η) + (i-2)*log(1. - η) - i*log1mexp(
+            log(1. - η)+ϵ)
+        #p = logaddexp(p, L[i] + log(f))
+        p = logaddexp(p, L[i] + f)
     end
-    try
-        return log(p)
-    catch
-        @error "log error: log($p);\n L = $L\n at integrate_root"
-    end
+    return p
+    # try
+    #     return log(p)
+    # catch
+    #     @error "log error: log($p);\n L = $L\n at integrate_root"
+    # end
 end
 
 function condition_oib(tree::Arboreal, η::T, ϵ::Matrix{T}) where T<:Real
     e = findroot(tree)
     f, g  = childnodes(tree, e)
     #root = geometric_extinctionp(ϵ[e, 2], η)
-    left = geometric_extinctionp(ϵ[f, 1], η)
-    rght = geometric_extinctionp(ϵ[g, 1], η)
+    left = geometric_extinctionp(exp(ϵ[f, 1]), η)
+    rght = geometric_extinctionp(exp(ϵ[g, 1]), η)
     #1. - left - rght + root
     p = (1. -left)*(1. -rght)
     #p = isapprox(p, zero(p), atol=1e-12) ? zero(p) : p  # XXX had some issues
@@ -296,44 +302,43 @@ function csuros_miklos!(L::Matrix{T},
         matrices::CsurosMiklos{T},
         tree::Arboreal,
         branches::Array{Int64}) where T<:Real
-    # FIXME compute on log scale!!
+    # TODO: maybe get ϵ and W also on log scales; not sure if it would matter
     @unpack W, ϵ, m = matrices
     mx = maximum(x)
 
     for e in branches
         if isleaf(tree, e)
-            L[e, x[e]+1] = 1.0
+            L[e, x[e]+1] = 0.
         else
             children = childnodes(tree, e)
             Mc = [x[c] for c in children]
             _M = cumsum([0 ; Mc])
-            _ϵ = cumprod([1.; [ϵ[c, 1] for c in children]])
-            # B = zeros(eltype(_ϵ), length(children), _M[end]+1, mx+1)
-            # A = zeros(eltype(_ϵ), length(children), _M[end]+1)
-            # FIXME, fill(NaN, dims) would be nicer, but not in correct type
+            #_ϵ = cumprod([1.; [ϵ[c, 1] for c in children]])
+            _ϵ = cumsum([0.; [ϵ[c, 1] for c in children]])
+            # FIXME, fill(-Inf, dims) would be nicer, but not in correct type
             B = log.(zeros(eltype(_ϵ), length(children), _M[end]+1, mx+1))
             A = log.(zeros(eltype(_ϵ), length(children), _M[end]+1))
             for i = 1:length(children)
                 c = children[i]
                 Mi = Mc[i]
-                #B[i, 1, :] += W[1:mx+1, 1:mx+1, c] * L[c, 1:mx+1]
-                B[i, 1, :] += log(W[1:mx+1, 1:mx+1, c]) + L[c, 1:mx+1]
+
+                # XXX this line makes using W on log scale tricky
+                B[i, 1, :] = log.(W[1:mx+1, 1:mx+1, c] * exp.(L[c, 1:mx+1]))
                 for t=1:_M[i], s=0:Mi  # this is 0...M[i-1] & 0...Mi
                     if s == Mi
-                        #B[i,t+1,s+1] = B[i,t,s+1] * ϵ[c,1]
-                        B[i,t+1,s+1] = B[i,t,s+1] + log(ϵ[c,1])
+                        # B[i,t+1,s+1] = B[i,t,s+1] + log(ϵ[c,1])
+                        B[i,t+1,s+1] = B[i,t,s+1] + ϵ[c,1]
                     else
-                        #B[i,t+1,s+1] = B[i,t,s+2] + ϵ[c,1]*B[i,t,s+1]
-                        Bs = [B[i,t,s+2], log(ϵ[c,1])+B[i,t,s+1]]
-                        idx = argmax(Bs)
-                        jdx = 2 - (idx + 1) % 2
-                        B[i,t+1,s+1] = Bs[idx] + log(1. -exp(Bs[jdx]-Bs[idx]))
+                        #B[i,t+1,s+1] = logaddexp(
+                        #    B[i,t,s+2], log(ϵ[c,1])+B[i,t,s+1])
+                        B[i,t+1,s+1] = logaddexp(
+                           B[i,t,s+2], ϵ[c,1]+B[i,t,s+1])
                     end
                 end
                 if i == 1
                     for n=0:_M[i+1]  # this is 0 ... M[i]
-                        #A[i,n+1] = B[i,1,n+1]/(1. - _ϵ[2])^n
-                        A[i,n+1] = B[i,1,n+1] - n*log(1. - _ϵ[2])
+                        #A[i,n+1] = B[i,1,n+1] - n*log(1. - _ϵ[2])
+                        A[i,n+1] = B[i,1,n+1] - n*log1mexp(_ϵ[2])
                     end
                 else
                     # XXX is this loop as efficient as it could?
@@ -342,19 +347,20 @@ function csuros_miklos!(L::Matrix{T},
                         if s < 0 || s > Mi
                             continue
                         else
-                            p = _ϵ[i]
+                            # p = _ϵ[i]
+                            p = exp(_ϵ[i])
                             if !(zero(p) < p < one(p))
                                 @error "Invalid extinction probability ($p)"
                                 p = one(p)
                             end
-                            #A[i,n+1] += pdf(Binomial(n, p), s) *
-                            #    A[i-1,t+1] * B[i,t+1,s+1]
-                            A[i,n+1] = log(exp(A[i,n+1]) + exp(logpdf(Binomial(n, p), s) + A[i-1,t+1] + B[i,t+1,s+1]))  # FIXME: use max-trick
+                            lp = logpdf(Binomial(n, p), s) +
+                                A[i-1,t+1] + B[i,t+1,s+1]
+                            A[i,n+1] = logaddexp(A[i,n+1], lp)
                         end
                     end
                     for n=0:_M[i+1]  # this is 0 ... M[i]
-                        #A[i,n+1] /= (1. - _ϵ[i+1])^n
-                        A[i,n+1] -= n*log(1. - _ϵ[i+1])
+                        #A[i,n+1] -= n*log(1. - _ϵ[i+1])
+                        A[i,n+1] -= n*log1mexp(_ϵ[i+1])
                     end
                 end
             end
