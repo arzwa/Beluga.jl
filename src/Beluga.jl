@@ -11,6 +11,7 @@ module Beluga
     using ForwardDiff
     using Optim
     using CSV
+    using MCMCChains
     import StatsFuns: logaddexp, log1mexp, log1pexp
     # using BirthDeathProcesses
 
@@ -26,6 +27,6 @@ module Beluga
     export
         SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,
         logpdf, logpdf!, Profile, PArray, set_L!, set_Ltmp!, GBM, mcmc!,
-        DLChain, GBMRatesPrior, LogUniform, ConstantRatesPrior, ExpRatesPrior,
+        DLChain, GBMRatesPrior, LogUniform, ConstantRatesPrior, NhRatesPrior,
         IIDRatesPrior, nrates, nwgd, gradient, mle
 end

@@ -171,6 +171,10 @@ function get_ϵ!(model::DuplicationLossWGD, branches::Vector{Int64})
             end
         end
     end
+    if any(ϵ .> 0.)
+        @error "Some non-valid extinction probabilities\n$(display(ϵ)), $λ, $μ"
+        ϵ[ϵ .> 0.] .= 0.
+    end
 end
 
 

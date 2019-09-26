@@ -15,8 +15,7 @@ prior1 = GBMRatesPrior(
 
 prior2 = Beluga.IIDRatesPrior(
     Exponential(0.1),
-    Exponential(),
-    Exponential(),
+    MvLogNormal(log.([0.5, 0.5]), [.5 0.25 ; 0.25 .5]),
     Beta(1,1),
     Beta(8,2))
 
@@ -31,11 +30,10 @@ s = SpeciesTree("test/data/plants1.nw")
 df = CSV.read("test/data/plants1-10.tsv", delim=",")
 deletecols!(df, :Orthogroup)
 p, m = Profile(df, s)
+#p = Profile()  # prior alone
 chain = DLChain(p, prior2, s, m)
-mcmc!(chain, 11000, show_every=100)
+chn = mcmc!(chain, 11000, show_every=100)
 
-
-chain2 = deepcopy(chain)
 
 
 # DL+WGD

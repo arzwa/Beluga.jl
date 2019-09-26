@@ -2,24 +2,24 @@
 # TODO this is basically the same as in Whale; so a common abstraction layer
 # would be nice (idem for the SpeciesTree & SlicedTree)
 
-const State = Dict{Symbol,Union{Vector{Float64},Float64}}
-
 abstract type Chain end
+
+const State = Dict{Symbol,Union{Vector{Float64},Float64}}
 
 """
     DLChain
 
-Chain object; keeping both the data, state, proposals, trace and priors.
+Chain object; storing both the data, state, proposals, trace and priors.
 """
 mutable struct DLChain <: Chain
     X::PArray
+    gen::Int64
+    tree::SpeciesTree
+    trace::DataFrame
     model::DuplicationLossWGD
-    Ψ::SpeciesTree
     state::State
     priors::RatesPrior
     proposals::Proposals
-    trace::DataFrame
-    gen::Int64
 end
 
 Base.getindex(w::Chain, s::Symbol) = w.state[s]
@@ -39,7 +39,16 @@ function DLChain(X::PArray, prior::RatesPrior, tree::SpeciesTree, m::Int64)
     init = rand(prior, tree)
     proposals = get_defaultproposals(init)
     model = DuplicationLossWGD(tree, init[:λ], init[:μ], init[:q], init[:η], m)
-    return DLChain(X, model, tree, init, prior, proposals, DataFrame(), 0)
+    return DLChain(X, 0, tree, DataFrame(), model, init, prior, proposals)
+end
+
+# get an MCMCChains chain (gives diagnostics etc.)
+function MCMCChains.Chains(c::DLChain, burnin=1000)
+    if size(c.trace)[1] < burnin
+        @error "Trace not long enough to discard $burnin iterations as burn-in"
+    end
+    X = reshape(Matrix(c.trace), (size(c.trace)...,1))[burnin+1:end, 2:end, :]
+    return Chains(X, [string(x) for x in names(c.trace)][2:end])
 end
 
 function get_defaultproposals(x::State)
@@ -57,10 +66,16 @@ function get_defaultproposals(x::State)
             proposals[k] = AdaptiveUnitProposal(0.2)
         end
     end
-    proposals[:ψ] = AdaptiveScaleProposal(1.)
+    proposals[:ψ] = AdaptiveScaleProposal(0.1)  # all-rates proposal
     return proposals
 end
 
+"""
+    logprior(chain::DLChain, args...)
+
+Evaluate prior for the current state and arbitrary modified parameters
+(args...). For example: `logprior(chain, :ν=>0.2, :λ=>rand(10))`.
+"""
 function logprior(chain::DLChain, args...)
     s = deepcopy(chain.state)
     for (k,v) in args
@@ -70,7 +85,7 @@ function logprior(chain::DLChain, args...)
             @warn "Trying to set unexisting variable ($k)"
         end
     end
-    logprior(chain.priors, s, chain.Ψ)
+    logprior(chain.priors, s, chain.tree)
 end
 
 logprior(c::DLChain, θ::NamedTuple) = logprior(c.priors, θ)
@@ -84,25 +99,28 @@ logprior(c::DLChain, θ::NamedTuple) = logprior(c.priors, θ)
 Do `niters` generations of the MCMC algorithm associated with chain. Dispatches
 to specific MCMC implementations based on the prior type.
 """
-function mcmc!(chain, niters, args...; show_trace=true, show_every=10)
+function mcmc!(chain, niters, args...;
+        show_trace=true, show_every=10, burnin=1000)
     mcmc!(chain, chain.priors, niters, show_trace, show_every, args...)
+    Chains(chain, burnin)
 end
 
-function mcmc!(chain::DLChain, priors::ConstantRatesPrior,
+function mcmc!(chain::DLChain,
+        priors::ConstantRatesPrior,
         n, show_trace, show_every, args...)
-    wgds = Beluga.nwgd(chain.Ψ) > 0
+    wgds = Beluga.nwgd(chain.tree) > 0
     init_mcmc!(chain)
     for i=1:n
         :η in args ? nothing : move_η!(chain)
         move_constantrates!(chain)
         log_mcmc!(chain, stdout, show_trace, show_every)
     end
-    return chain
 end
 
-function mcmc!(chain::DLChain, priors::Union{GBMRatesPrior,IIDRatesPrior},
+function mcmc!(chain::DLChain,
+        priors::Union{GBMRatesPrior,IIDRatesPrior},
         n, show_trace, show_every, args...)
-    wgds = Beluga.nwgd(chain.Ψ) > 0
+    wgds = Beluga.nwgd(chain.tree) > 0
     init_mcmc!(chain)
     for i=1:n
         :ν in args ? nothing : move_ν!(chain)  # could be more elegant
@@ -112,15 +130,15 @@ function mcmc!(chain::DLChain, priors::Union{GBMRatesPrior,IIDRatesPrior},
             move_q!(chain)
             move_wgds!(chain)
         end
-        #move_allrates!(chain)  # something fishy
+        move_allrates!(chain)
         log_mcmc!(chain, stdout, show_trace, show_every)
     end
-    return chain
 end
 
-function mcmc!(chain::DLChain, priors::ExpRatesPrior,
+function mcmc!(chain::DLChain,
+        priors::NhRatesPrior,
         n, show_trace, show_every, args...)
-    wgds = Beluga.nwgd(chain.Ψ) > 0
+    wgds = Beluga.nwgd(chain.tree) > 0
     init_mcmc!(chain)
     for i=1:n
         :η in args ? nothing : move_η!(chain)
@@ -129,10 +147,9 @@ function mcmc!(chain::DLChain, priors::ExpRatesPrior,
             move_q!(chain)
             move_wgds!(chain)
         end
-        #move_allrates!(chain)  # something fishy
+        move_allrates!(chain)
         log_mcmc!(chain, stdout, show_trace, show_every)
     end
-    return chain
 end
 
 function init_mcmc!(chain)
@@ -146,11 +163,7 @@ end
 function log_mcmc!(chain, io, show_trace, show_every)
     chain.gen += 1
     if chain.gen == 1
-        s = chain.state
-        x = vcat("gen", [typeof(v)<:AbstractArray ?
-                ["$k$i" for i in 1:length(v)] : k for (k,v) in s]...)
-        chain.trace = DataFrame(zeros(0,length(x)), [Symbol(k) for k in x])
-        show_trace ? write(io, join(x, ","), "\n") : nothing
+        init_trace!(chain, io, show_trace)
     end
     x = vcat(chain.gen, [x for x in values(chain.state)]...)
     push!(chain.trace, x)
@@ -158,6 +171,13 @@ function log_mcmc!(chain, io, show_trace, show_every)
         write(io, join(x, ","), "\n")
     end
     flush(stdout)
+end
+
+function init_trace!(chain, io, show_trace)
+    x = vcat("gen", [typeof(v)<:AbstractArray ?
+            ["$k$i" for i in 1:length(v)] : k for (k,v) in chain.state]...)
+    chain.trace = DataFrame(zeros(0,length(x)), [Symbol(k) for k in x])
+    show_trace ? write(io, join(x, ","), "\n") : nothing
 end
 
 
@@ -222,8 +242,8 @@ end
 
 function move_rates!(chain::DLChain)
     seen = Set{Int64}()  # HACK store indices that were already done
-    for i in chain.Ψ.order
-        idx = chain.Ψ[i,:θ]
+    for i in chain.tree.order
+        idx = chain.tree[i,:θ]
         idx in seen ? continue : push!(seen, idx)
         prop = chain.proposals[:λ,idx]
         λi, hr1 = prop(chain[:λ,idx])
@@ -253,9 +273,11 @@ function move_allrates!(chain::DLChain)
     prop = chain.proposals[:ψ]
     λ_, hr1 = prop(chain[:λ])
     μ_, hr2 = prop(chain[:μ])
-    d = deepcopy(chain.model)
-    d.λ = λ_
-    d.μ = μ_
+    @unpack tree, q, η, value = chain.model
+    # d = deepcopy(chain.model)
+    # d.λ = λ_ that was so stupid
+    # d.μ = μ_
+    d = DuplicationLossWGD(tree, λ_, μ_, q, η, value.m)
     p = logprior(chain, :λ=>λ_, :μ=>μ_)
     l = logpdf!(d, chain.X)
     a = p + l - chain[:logπ] - chain[:logp] + hr1 + hr2
@@ -274,7 +296,7 @@ function move_allrates!(chain::DLChain)
 end
 
 function move_q!(chain::DLChain)
-    tree = chain.Ψ
+    tree = chain.tree
     for i in wgdnodes(tree)
         idx = tree[i,:q]
         prop = chain.proposals[:q,idx]
@@ -299,7 +321,7 @@ function move_q!(chain::DLChain)
 end
 
 function move_wgds!(chain::DLChain)
-    tree = chain.Ψ
+    tree = chain.tree
     for i in wgdnodes(tree)
         idx = tree[i,:q]
         jdx = tree[i,:θ]
@@ -328,30 +350,3 @@ function move_wgds!(chain::DLChain)
         end
     end
 end
-
-#= AdaptiveMCMC interface?
-"""
-lp = loglhood(chain, x, i, args)
-"""
-function loglhood(chain::DLChain, x::State, i::Int64, args...)
-    d = deepcopy(chain.model)
-    for p in args
-        d[p, i] = x[p, i]
-    end
-    l_ = logpdf!(d, chain.X, i)
-    return l_, d
-end
-
-"""
-lπ = logprior(chain, x, i, args)
-"""
-function logprior(chain::DLChain, x::State, )
-    s = deepcopy(chain.state)
-    for (k,v) in args
-        if haskey(s, k)
-            length(v) == 2 ? s[k][v[1]] = v[2] : s[k] = v
-        end
-    end
-    θ = (Ψ=chain.Ψ, ν=s[:ν], λ=s[:λ], μ=s[:μ], q=s[:q], η=s[:η])
-    logprior(chain, θ)
-end=#
