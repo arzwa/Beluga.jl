@@ -1,19 +1,29 @@
 # Adaptive MWG-MCMC for DL(+WGD) model
-abstract type Chain end
-abstract type RatesPrior end
-const Prior = Union{<:Distribution,Array{<:Distribution,1},<:Real}
-const State = Dict{Symbol,Union{Vector{Float64},Float64}}
-Distributions.logpdf(x::Real, y) = 0.  # hack for constant priors
+# TODO this is basically the same as in Whale; so a common abstraction layer
+# would be nice (idem for the SpeciesTree & SlicedTree)
 
+abstract type Chain end
+
+const State = Dict{Symbol,Union{Vector{Float64},Float64}}
+
+
+# DLChain
+# =======
+# NOTE: Might be better to have a parametric DLChain{RatesPrior} type
+"""
+    DLChain
+
+Chain object; storing both the data, state, proposals, trace and priors.
+"""
 mutable struct DLChain <: Chain
-    X::AbstractMatrix{Int64}
-    model::DLModel
-    Ψ::SpeciesTree
+    X::PArray
+    gen::Int64
+    tree::SpeciesTree
+    trace::DataFrame
+    model::DuplicationLossWGD
     state::State
     priors::RatesPrior
     proposals::Proposals
-    trace::DataFrame
-    gen::Int64
 end
 
 Base.getindex(w::Chain, s::Symbol) = w.state[s]
@@ -23,14 +33,26 @@ Base.setindex!(w::Chain, x, s::Symbol, i::Int64) = w.state[s][i] = x
 Base.display(io::IO, w::Chain) = print("$(typeof(w))($(w.state))")
 Base.show(io::IO, w::Chain) = write(io, "$(typeof(w))($(w.state))")
 
-function DLChain(X::AbstractMatrix{Int64}, prior::RatesPrior, tree::SpeciesTree)
+"""
+    DLChain(X::PArray, prior::RatesPrior, tree::SpeciesTree, m::Int64)
+
+Initilialize a DLChain with default proposals and sample from the prior as
+initial state.
+"""
+function DLChain(X::PArray, prior::RatesPrior, tree::SpeciesTree, m::Int64)
     init = rand(prior, tree)
     proposals = get_defaultproposals(init)
-    trace = DataFrame()
-    gen = 0
-    mmax = size(X)[1] == 0 ? 0 : maximum(X)
-    model = DLModel(tree, mmax, init[:λ], init[:μ], init[:η])
-    return DLChain(X, model, tree, init, prior, proposals, trace, gen)
+    model = DuplicationLossWGD(tree, init[:λ], init[:μ], init[:q], init[:η], m)
+    return DLChain(X, 0, tree, DataFrame(), model, init, prior, proposals)
+end
+
+# get an MCMCChains chain (gives diagnostics etc.)
+function MCMCChains.Chains(c::DLChain, burnin=1000)
+    if size(c.trace)[1] < burnin
+        @error "Trace not long enough to discard $burnin iterations as burn-in"
+    end
+    X = reshape(Matrix(c.trace), (size(c.trace)...,1))[burnin+1:end, 2:end, :]
+    return Chains(X, [string(x) for x in names(c.trace)][2:end])
 end
 
 function get_defaultproposals(x::State)
@@ -38,6 +60,8 @@ function get_defaultproposals(x::State)
     for (k, v) in x
         if k ∈ [:logπ, :logp]
             continue
+        elseif k == :q
+            proposals[k] = [AdaptiveUnitProposal(0.2) for i=1:length(v)]
         elseif typeof(v) <: AbstractArray
             proposals[k] = [AdaptiveScaleProposal(0.1) for i=1:length(v)]
         elseif k == :ν
@@ -46,116 +70,131 @@ function get_defaultproposals(x::State)
             proposals[k] = AdaptiveUnitProposal(0.2)
         end
     end
+    proposals[:ψ] = AdaptiveScaleProposal(0.1)  # all-rates proposal
     return proposals
 end
 
-# this is the model without correlation of λ and μ
-struct LogRatesPrior <: RatesPrior
-    dν::Prior
-    dλ::Prior
-    dμ::Prior
-    dη::Prior
-end
-
-function logprior(d::LogRatesPrior, θ::NamedTuple)
-    @unpack Ψ, ν, λ, μ, η = θ
-    @unpack dν, dλ, dμ, dη = d
-    n = length(Ψ.tree.branches)
-    lp  = logpdf(dν, ν) + logpdf(dλ, λ[1]) + logpdf(dμ, μ[1]) + logpdf(dη, η)
-    lp += logpdf(MvNormal(repeat([λ[1]],n), ν), λ[2:end])
-    lp += logpdf(MvNormal(repeat([μ[1]],n), ν), μ[2:end])
-    return lp
-end
-
-function Base.rand(d::LogRatesPrior, tree::Arboreal)
-    @unpack dν, dλ, dμ, dη = d
-    ν = rand(dν)
-    η = rand(dη)
-    λ0 = rand(dλ)
-    μ0 = rand(dμ)
-    λ = [λ0 ; rand(MvNormal(repeat([λ0], length(tree.tree.branches)), ν))]
-    μ = [μ0 ; rand(MvNormal(repeat([μ0], length(tree.tree.branches)), ν))]
-    return State(:ν=>ν, :η=>η, :λ=>λ, :μ=>μ, :logp=>-Inf, :logπ=>-Inf)
-end
-
-struct GBMRatesPrior <: RatesPrior
-    dν::Prior
-    dλ::Prior
-    dμ::Prior
-    dη::Prior
-end
-
-function Base.rand(d::GBMRatesPrior, tree::Arboreal)
-    @unpack dν, dλ, dμ, dη = d
-    ν = rand(dν)
-    η = rand(dη)
-    λ0 = rand(dλ)
-    μ0 = rand(dμ)
-    λ = rand(GBM(tree, λ0, ν))
-    μ = rand(GBM(tree, λ0, ν))
-    return State(:ν=>ν, :η=>η, :λ=>λ, :μ=>μ, :logp=>-Inf, :logπ=>-Inf)
-end
-
 """
-Example: `logpdf(gbm, (Ψ=t, ν=0.2, λ=rand(17), μ=rand(17), η=0.8))`
+    logprior(chain::DLChain, args...)
+
+Evaluate prior for the current state and arbitrary modified parameters
+(args...). For example: `logprior(chain, :ν=>0.2, :λ=>rand(10))`.
 """
-function logprior(d::GBMRatesPrior, θ::NamedTuple)
-    @unpack Ψ, ν, λ, μ, η = θ
-    @unpack dν, dλ, dμ, dη = d
-    lp  = logpdf(dν, ν) + logpdf(dλ, λ[1]) + logpdf(dμ, μ[1]) + logpdf(dη, η)
-    lp += logpdf(GBM(Ψ, λ[1], ν), λ)
-    lp += logpdf(GBM(Ψ, μ[1], ν), μ)
-    return lp
-end
-
-logprior(c::DLChain, θ) = logprior(c.priors, θ)
-
-function loglhood(c::DLChain, θ::NamedTuple)
-    if size(c.X)[1] == 0
-        return 0., c.model
-    end
-    @unpack λ, μ, η = θ
-    dlm = DLModel(c.model, λ, μ, η)
-    logpdf(dlm, c.X), dlm
-end
-
-function Distributions.logpdf(c::DLChain, args...)
-    state = deepcopy(c.state)
-    for (k, v) in args
-        if k == :θ
-            n = length(v) ÷ 2
-            state[:λ] = v[1:n]
-            state[:μ] = v[n+1:end]
-        elseif ~haskey(state, k)
-            @error "State does not contain variable $k"
+function logprior(chain::DLChain, args...)
+    s = deepcopy(chain.state)
+    for (k,v) in args
+        if haskey(s, k)
+            typeof(v)<:Tuple ? s[k][v[1]] = v[2] : s[k] = v
         else
-            state[k] = v
+            @warn "Trying to set unexisting variable ($k)"
         end
     end
-    pr = logprior(c,(Ψ=c.Ψ, ν=state[:ν], λ=state[:λ], μ=state[:μ], η=state[:η]))
-    dlm = DLModel(c.model, exp.(state[:λ]), exp.(state[:μ]), state[:η])
-    pr + logpdf(dlm, c.X)
+    logprior(chain.priors, s, chain.tree)
 end
 
-Distributions.logpdf(chain::Chain) = logpdf(chain.prior,
-    (Ψ=chain.Ψ, ν=chain[:ν], λ=chain[:λ], μ=chain[:μ], η=chain[:η]))
+logprior(c::DLChain, θ::NamedTuple) = logprior(c.priors, θ)
 
-function mcmc!(chain::DLChain, n::Int64, args...;
-        show_every=100, show_trace=true)
+
+# MCMC
+# ====
+"""
+    mcmc!(chain, niters, fixed_params...; show_trace=true, show_every=10)
+
+Do `niters` generations of the MCMC algorithm associated with chain. Dispatches
+to specific MCMC implementations based on the prior type.
+"""
+function mcmc!(chain, niters, args...;
+        show_trace=true, show_every=10, burnin=1000)
+    mcmc!(chain, chain.priors, niters, show_trace, show_every, args...)
+    Chains(chain, burnin)
+end
+
+function mcmc!(chain::DLChain,
+        priors::ConstantRatesPrior,
+        n, show_trace, show_every, args...)
+    wgds = Beluga.nwgd(chain.tree) > 0
+    init_mcmc!(chain)
     for i=1:n
-        chain.gen += 1
-        move_ν!(chain)
-        move_η!(chain)
-        move_rates!(chain)
-        log_mcmc(chain, stdout, show_trace, show_every)
+        :η in args ? nothing : move_η!(chain)
+        move_constantrates!(chain)
+        if wgds
+            move_q!(chain)
+        end
+        log_mcmc!(chain, stdout, show_trace, show_every)
     end
-    return chain
 end
 
+function mcmc!(chain::DLChain,
+        priors::Union{GBMRatesPrior,IIDRatesPrior},
+        n, show_trace, show_every, args...)
+    wgds = Beluga.nwgd(chain.tree) > 0
+    init_mcmc!(chain)
+    for i=1:n
+        :ν in args ? nothing : move_ν!(chain)  # could be more elegant
+        :η in args ? nothing : move_η!(chain)
+        move_rates!(chain)
+        if wgds
+            move_q!(chain)
+            move_wgds!(chain)
+        end
+        move_allrates!(chain)
+        log_mcmc!(chain, stdout, show_trace, show_every)
+    end
+end
+
+function mcmc!(chain::DLChain,
+        priors::NhRatesPrior,
+        n, show_trace, show_every, args...)
+    wgds = Beluga.nwgd(chain.tree) > 0
+    init_mcmc!(chain)
+    for i=1:n
+        :η in args ? nothing : move_η!(chain)
+        move_rates!(chain)
+        if wgds
+            move_q!(chain)
+            move_wgds!(chain)
+        end
+        move_allrates!(chain)
+        log_mcmc!(chain, stdout, show_trace, show_every)
+    end
+end
+
+function init_mcmc!(chain)
+    l = logpdf!(chain.model, chain.X)
+    p = logprior(chain)
+    set_L!(chain.X)
+    chain[:logp] = l
+    chain[:logπ] = p
+end
+
+function log_mcmc!(chain, io, show_trace, show_every)
+    chain.gen += 1
+    if chain.gen == 1
+        init_trace!(chain, io, show_trace)
+    end
+    x = vcat(chain.gen, [x for x in values(chain.state)]...)
+    push!(chain.trace, x)
+    if show_trace && chain.gen % show_every == 0
+        write(io, join(x, ","), "\n")
+    end
+    flush(stdout)
+end
+
+function init_trace!(chain, io, show_trace)
+    x = vcat("gen", [typeof(v)<:AbstractArray ?
+            ["$k$i" for i in 1:length(v)] : k for (k,v) in chain.state]...)
+    chain.trace = DataFrame(zeros(0,length(x)), [Symbol(k) for k in x])
+    show_trace ? write(io, join(x, ","), "\n") : nothing
+end
+
+
+# Moves
+# =====
+# NB do not use unpack statements in moves (move_rates)- I don't understand why
 function move_ν!(chain::DLChain)
     prop = chain.proposals[:ν]
     ν_, hr = prop(chain[:ν])
-    p_ = logprior(chain, (Ψ=chain.Ψ, λ=chain[:λ],μ=chain[:μ],η=chain[:η], ν=ν_))
+    p_ = logprior(chain, :ν=>ν_)
     mhr = p_ - chain[:logπ] + hr
     if log(rand()) < mhr
         chain[:logπ] = p_
@@ -168,55 +207,153 @@ end
 function move_η!(chain::DLChain)
     prop = chain.proposals[:η]
     η_, hr = prop(chain[:η])
-    p_ = logprior(chain, (Ψ=chain.Ψ, λ=chain[:λ],μ=chain[:μ],η=η_, ν=chain[:ν]))
-    l_, model = loglhood(chain, (λ=chain[:λ], μ=chain[:μ], η=η_,))
-    mhr = p_ + l_ - chain[:logπ] - chain[:logp]
+    p_ = logprior(chain, :η=>η_)  # prior
+    d = deepcopy(chain.model)
+    d.η = η_
+    l_ = logpdf!(d, chain.X, 1)  # likelihood; XXX assumes root is node 1
+    mhr = p_ + l_ - chain[:logπ] - chain[:logp] + hr
     if log(rand()) < mhr
-        chain.model = model
+        chain.model = d
         chain[:logp] = l_
         chain[:logπ] = p_
         chain[:η] = η_
         prop.accepted += 1
+        # NB: changing η does not change L matrices
+    end
+    consider_adaptation!(prop, chain.gen)
+end
+
+function move_constantrates!(chain::DLChain)
+    prop = chain.proposals[:λ, 1]
+    λ, hr1 = prop(chain[:λ, 1])
+    μ, hr2 = prop(chain[:μ, 1])
+    p_ = logprior(chain, :λ=>λ, :μ=>μ)  # prior
+    d = deepcopy(chain.model)
+    d[:λ, 1] = λ
+    d[:μ, 1] = μ
+    l_ = logpdf!(d, chain.X)
+    mhr = l_ + p_ - chain[:logp] - chain[:logπ] + hr1 + hr2
+    if log(rand()) < mhr
+        set_L!(chain.X)    # update L matrix
+        chain.model = d
+        chain[:λ, 1] = λ
+        chain[:μ, 1] = μ
+        chain[:logp] = l_
+        chain[:logπ] = p_
+        prop.accepted += 1
+    else
+        set_Ltmp!(chain.X)  # revert Ltmp matrix
     end
     consider_adaptation!(prop, chain.gen)
 end
 
 function move_rates!(chain::DLChain)
-    for i in postorder(chain.Ψ)
-        prop = chain.proposals[:λ, i]
-        λi, hr1 = prop(chain[:λ,i])
-        μi, hr2 = prop(chain[:μ,i])
-        λ_ = deepcopy(chain[:λ]) ; λ_[i] = λi
-        μ_ = deepcopy(chain[:μ]) ; μ_[i] = μi
-        l_, model = loglhood(chain, (λ=λ_, μ=μ_, η=chain[:η]))
-        p_  = logprior(chain, (Ψ=chain.Ψ, λ=λ_, μ=μ_, η=chain[:η], ν=chain[:ν]))
-        l = chain[:logp]
-        p = chain[:logπ]
-        mhr = l_ + p_ - l - p + hr1 + hr2
+    seen = Set{Int64}()  # HACK store indices that were already done
+    for i in chain.tree.order
+        idx = chain.tree[i,:θ]
+        idx in seen ? continue : push!(seen, idx)
+        prop = chain.proposals[:λ,idx]
+        λi, hr1 = prop(chain[:λ,idx])
+        μi, hr2 = prop(chain[:μ,idx])
+        p_ = logprior(chain, :λ=>(idx, λi), :μ=>(idx, μi))  # prior
+        d = deepcopy(chain.model)
+        d[:μ, i] = μi   # NOTE: implementation of setindex! uses node indices!
+        d[:λ, i] = λi   # NOTE: implementation of setindex! uses node indices!
+        l_ = logpdf!(d, chain.X, i)  # likelihood
+        mhr = l_ + p_ - chain[:logp] - chain[:logπ] + hr1 + hr2
         if log(rand()) < mhr
-            chain.model = model
-            chain[:λ, i] = λi
-            chain[:μ, i] = μi
+            set_L!(chain.X)    # update L matrix
+            chain.model = d
+            chain[:λ, idx] = λi
+            chain[:μ, idx] = μi
             chain[:logp] = l_
             chain[:logπ] = p_
             prop.accepted += 1
+        else
+            set_Ltmp!(chain.X)  # revert Ltmp matrix
         end
         consider_adaptation!(prop, chain.gen)
     end
 end
 
-function log_mcmc(chain, io, show_trace, show_every)
-    if chain.gen == 1
-        s = chain.state
-        x = vcat("gen", [typeof(v)<:AbstractArray ?
-                ["$k$i" for i in 1:length(v)] : k for (k,v) in s]...)
-        chain.trace = DataFrame(zeros(0,length(x)), [Symbol(k) for k in x])
-        show_trace ? write(io, join(x, ","), "\n") : nothing
+function move_allrates!(chain::DLChain)
+    prop = chain.proposals[:ψ]
+    λ_, hr1 = prop(chain[:λ])
+    μ_, hr2 = prop(chain[:μ])
+    @unpack tree, q, η, value = chain.model
+    # d = deepcopy(chain.model)
+    # d.λ = λ_ that was so stupid
+    # d.μ = μ_
+    d = DuplicationLossWGD(tree, λ_, μ_, q, η, value.m)
+    p = logprior(chain, :λ=>λ_, :μ=>μ_)
+    l = logpdf!(d, chain.X)
+    a = p + l - chain[:logπ] - chain[:logp] + hr1 + hr2
+    if log(rand()) < a
+        set_L!(chain.X)    # update L matrix
+        chain.model = d
+        chain[:λ] = λ_
+        chain[:μ] = μ_
+        chain[:logp] = l
+        chain[:logπ] = p
+        prop.accepted += 1
+    else
+        set_Ltmp!(chain.X)  # revert Ltmp matrix
     end
-    x = vcat(chain.gen, [x for x in values(chain.state)]...)
-    push!(chain.trace, x)
-    if show_trace && chain.gen % show_every == 0
-        write(io, join(x, ","), "\n")
+    consider_adaptation!(prop, chain.gen)
+end
+
+function move_q!(chain::DLChain)
+    tree = chain.tree
+    for i in wgdnodes(tree)
+        idx = tree[i,:q]
+        prop = chain.proposals[:q,idx]
+        qi, hr1 = prop(chain[:q,idx])
+        p_ = logprior(chain, :q=>(idx, qi))  # prior
+        d = deepcopy(chain.model)
+        d[:q, i] = qi
+        l_ = logpdf!(d, chain.X, childnodes(tree,i)[1])  # likelihood
+        mhr = p_ + l_ - chain[:logπ] - chain[:logp]
+        if log(rand()) < mhr
+            set_L!(chain.X)    # update L matrix
+            chain.model = d
+            chain[:logp] = l_
+            chain[:logπ] = p_
+            chain[:q, idx] = qi
+            prop.accepted += 1
+        else
+            set_Ltmp!(chain.X)  # revert Ltmp matrix
+        end
+        consider_adaptation!(prop, chain.gen)
     end
-    flush(stdout)
+end
+
+function move_wgds!(chain::DLChain)
+    tree = chain.tree
+    for i in wgdnodes(tree)
+        idx = tree[i,:q]
+        jdx = tree[i,:θ]
+        propq = chain.proposals[:q,idx]
+        propr = chain.proposals[:λ,jdx]
+        qi, hr1 = propq(chain[:q,idx])
+        λi, hr2 = propr(chain[:λ,jdx])
+        μi, hr3 = propr(chain[:μ,jdx])
+        p_ = logprior(chain, :q=>(idx, qi), :λ=>(jdx, λi), :μ=>(jdx, μi))# prior
+        d = deepcopy(chain.model)
+        d[:q,i] = qi
+        d[:λ,i] = λi
+        d[:μ,i] = μi
+        l_ = logpdf!(d, chain.X, childnodes(tree,i)[1])  # likelihood
+        mhr = p_ + l_ - chain[:logπ] - chain[:logp] + hr2 + hr3
+        if log(rand()) < mhr
+            set_L!(chain.X)    # update L matrix
+            chain.model = d
+            chain[:logp] = l_
+            chain[:logπ] = p_
+            chain[:q, idx] = qi
+            chain[:λ, jdx] = λi
+            chain[:μ, jdx] = μi
+        else
+            set_Ltmp!(chain.X)  # revert Ltmp matrix
+        end
+    end
 end

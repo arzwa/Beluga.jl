@@ -1,5 +1,7 @@
 using Test
 using Beluga
 
-include("dlmodel.jl")
-include("mle.jl")
+include("dl.jl")
+include("dlwgd.jl")
+include("profile.jl")
+include("amwg-mcmc.jl")
