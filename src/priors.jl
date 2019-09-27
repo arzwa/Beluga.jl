@@ -18,7 +18,9 @@ Distributions.logpdf(d::LogUniform, x::T) where T<:Real =
 
 Base.rand(d::LogUniform) = exp(rand(Uniform(d.a, d.b)))
 
-Distributions.logpdf(x::Real, y) = 0.  # hack for constant priors
+# HACK for constant priors
+Base.rand(x::Real) = x
+Distributions.logpdf(x::Real, y) = 0.
 
 
 # IID rates

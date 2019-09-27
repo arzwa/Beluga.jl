@@ -6,10 +6,10 @@ using DistributedArrays
 using Beluga
 
 # NB always re-initialize p when starting a new chain!
+
 prior1 = GBMRatesPrior(
     InverseGamma(5,1),
-    LogUniform(-8,3),
-    LogUniform(-8,3),
+    MvLogNormal(log.([0.5, 0.5]), [.5 0.25 ; 0.25 .5]),
     Beta(1,1),
     Beta(8,2))
 
@@ -19,13 +19,14 @@ prior2 = Beluga.IIDRatesPrior(
     Beta(1,1),
     Beta(8,2))
 
-prior3 = Beluga.ExpRatesPrior(
-    Exponential(),
-    Exponential(),
+prior3 = Beluga.NhRatesPrior(
+    MvLogNormal(log.([0.5, 0.5]), [.5 0.25 ; 0.25 .5]),
     Beta(1,1),
     Beta(8,2))
 
+
 # DL model
+# ========
 s = SpeciesTree("test/data/plants1.nw")
 df = CSV.read("test/data/plants1-10.tsv", delim=",")
 deletecols!(df, :Orthogroup)
@@ -35,102 +36,26 @@ chain = DLChain(p, prior2, s, m)
 chn = mcmc!(chain, 11000, show_every=100)
 
 
-
 # DL+WGD
-s = SpeciesTree("test/data/tree2.nw")
-s[3, :q] = 1
-Beluga.set_wgdrates!(s)
-df = CSV.read("test/data/counts2.tsv", delim="\t")
+# ======
+s = SpeciesTree("test/data/hexapods1.nw")
+addwgd!(s, [:bmo, :pra], 1.5, 1)
+df = CSV.read("test/data/hexapods1-10.tsv", delim="\t")
 deletecols!(df, :Orthogroup)
+
+# iid prior
 p, m = Profile(df, s)
-chain = DLChain(p, prior, s, m)
-chain = mcmc!(chain, 11000, show_every=10)
+chain = DLChain(p, prior2, s, m)
+res = mcmc!(chain, 11000, show_every=10)
 
-
-s = SpeciesTree("test/data/tree1.nw")
-df = CSV.read("test/data/counts2.tsv", delim="\t")
-deletecols!(df, :Orthogroup)
+# gbm prior
 p, m = Profile(df, s)
-chain = DLChain(p, prior, s, m)
-s[17, :θ] = 2
-s[12, :θ] = 2
-s[5, :θ] = 2
-chain.model.λ = chain[:λ] = rand(14)
-chain.model.μ = chain[:μ] = rand(14)
-chain = mcmc!(chain, 11000, show_every=10)
+chain2 = DLChain(p, prior1, s, m)
+res2 = mcmc!(chain2, 11000, show_every=10)
+
+chns = chainscat(res, res2)
+plot(chns)
 
 
-s = SpeciesTree("test/data/tree1.nw")
-df = CSV.read("test/data/counts2.tsv", delim="\t")
-deletecols!(df, :Orthogroup)
-Beluga.set_constantrates!(s)
-p, m = Profile(df, s)
-prior = ConstantRatesPrior(
-    Exponential(1), Exponential(1), Beta(1,1), Beta(6,2))
-chain2 = DLChain(p, prior, s, m)
-chain2 = mcmc!(chain2, 11000, show_every=10)
-
-
-function plot_chain(chain, s, burnin=1000)
-    cols = [x for x in names(chain.trace) if startswith(string(x), string(s))]
-    p = [plot(chain.trace[burnin:end, cols[i]], legend=false) for
-            i=1:length(cols)]
-    plot(p...)
-end
-
-
-# AMM
-mutable struct AMMChain <: Chain
-    X::PArray
-    model::DuplicationLossWGD
-    Ψ::SpeciesTree
-    state::State
-    proposals::Proposals
-    prior::Distribution
-    trace::Array{Float64,2}
-    gen::Int64
-end
-
-function Distributions.logpdf(chain::AMMChain, v)
-    m = chain.model([exp.(v) ; 0.9])
-    logpdf(chain.prior, v) + logpdf!(m, chain.X)
-end
-
-
-s = SpeciesTree("test/data/tree1.nw")
-df = CSV.read("test/data/counts2.tsv", delim="\t")
-deletecols!(df, :Orthogroup)
-p, m = Profile(df, s)
-chain = DLChain(p, prior, s, m)
-chain.model.λ = chain[:λ] = rand(17)
-chain.model.μ = chain[:μ] = rand(17)
-
-v = Beluga.asvector(chain.model)[1:end-1]
-state = State(:θ=>log.(v), :logp=>-Inf)
-prop = Proposals(:θ=>AdaptiveMixtureProposal(length(v), start=100))
-pr = MvNormal(repeat([log(0.5)], length(v)), 1.)
-chain = AMMChain(p, chain.model, s, state, prop, pr,
-    zeros(0,length(v)+1), 0)
-
-function amm_mcmc!(chain, p)
-    prop = chain.proposals[p]
-    x = prop(chain[p])
-    lp = logpdf(chain, x)
-    mhr = lp - chain[:logp]
-    if log(rand()) < mhr
-        chain[p] = x
-        chain[:logp] = lp
-        prop.accepted += 1
-        set_L!(chain.X)
-    else
-        set_Ltmp!(chain.X)
-    end
-end
-
-
-for i=1:10000
-    amm_mcmc!(chain, :θ)
-    chain.trace = [chain.trace ; [exp.(chain[:θ]') chain[:logp]]]
-    i % 100 == 0 ?
-        println(join(round.(chain.trace[end,:], digits=3), ",")) : nothing
-end
+# Constant rates model
+# ====================

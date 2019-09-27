@@ -51,6 +51,7 @@ Distributions.logpdf(m::DuplicationLossWGD{T,V}, p::PArray) where
 set_Ltmp!(p::PArray) = ppeval(_set_Ltmp!, p)
 set_L!(p::PArray) = ppeval(_set_L!, p)
 
+# NOTE maybe `map` would make more sense (more readable)
 function _set_Ltmp!(p)
     p[1].Ltmp = deepcopy(p[1].L)  # XXX this must be a deepcopy!!!
     0.

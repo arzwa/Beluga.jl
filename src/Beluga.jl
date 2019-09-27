@@ -28,5 +28,5 @@ module Beluga
         SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,
         logpdf, logpdf!, Profile, PArray, set_L!, set_Ltmp!, GBM, mcmc!,
         DLChain, GBMRatesPrior, LogUniform, ConstantRatesPrior, NhRatesPrior,
-        IIDRatesPrior, nrates, nwgd, gradient, mle
+        IIDRatesPrior, nrates, nwgd, gradient, mle, addwgd!
 end

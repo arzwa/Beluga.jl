@@ -28,7 +28,7 @@ change in parameters on branch `i` (i.e. those that are not conditionally
 independent of `θ` on branch `i`). Note that this is only for `θ` (i.e.
 typically (λ, μ) in the birth-death process).
 """
-struct SpeciesTree <: Arboreal
+mutable struct SpeciesTree <: Arboreal
     tree::Tree
     leaves::Dict{Int64,Symbol}
     bindex::BranchIndex
@@ -73,8 +73,8 @@ leafname(d::PhyloLinearBDP, i::Int64) = leafname(d.tree, i)
 iswgd(Ψ::SpeciesTree, i::Int64) = haskey(Ψ.bindex[i], :q)
 iswgdafter(Ψ::SpeciesTree, i::Int64) = isroot(Ψ.tree, i) ?
     false : haskey(Ψ.bindex[parentnode(Ψ, i)], :q)
-qparent(Ψ::SpeciesTree, i::Int64) = Ψ.bindex[parentnode(Ψ, i), :q]
 nwgd(Ψ::SpeciesTree) = length(wgdnodes(Ψ))
+qparent(Ψ::SpeciesTree, i::Int64) = Ψ.bindex[parentnode(Ψ, i), :q]
 wgdnodes(Ψ::SpeciesTree) = [k for (k,v) in Ψ.bindex if haskey(v, :q)]
 
 function set_wgdrates!(Ψ::SpeciesTree)
@@ -112,7 +112,25 @@ hasconstantrates(Ψ::SpeciesTree, s=:θ) =
 
 nrates(Ψ::SpeciesTree, s=:θ) = length(unique([v[:θ] for (k,v) in Ψ.bindex]))
 
-# expanded profile
+function addwgd!(Ψ::SpeciesTree, lca, t, i)
+    n = lca_node(Ψ.tree, Set([k for (k,v) in Ψ.leaves if v in lca]))
+    while leafdist(Ψ, parentnode(Ψ, n)) < t
+        n = parentnode(Ψ, n)
+    end
+    tn = leafdist(Ψ, n)
+    tbefore = t - tn
+    wgdafter = insert_node!(Ψ.tree, n, tbefore)
+    wgdnode = insert_node!(Ψ.tree, wgdafter, 0.)
+    Ψ.order = postorder(Ψ)
+    @info "Added WGD node $wgdnode and 'after' node $wgdafter"
+    Ψ.bindex[wgdnode] = Dict(:q=>i, :θ=>Ψ[n, :θ])
+    Ψ.bindex[wgdafter] = Dict(:θ=>Ψ[n, :θ])
+    set_parentbranches!(Ψ)
+end
+
+
+# Expanded profile
+# ================
 function profile(Ψ::SpeciesTree, df::DataFrame)
     M = zeros(Int64, size(df)[1], length(Ψ))
     for n in Ψ.order

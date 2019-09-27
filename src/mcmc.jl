@@ -6,6 +6,10 @@ abstract type Chain end
 
 const State = Dict{Symbol,Union{Vector{Float64},Float64}}
 
+
+# DLChain
+# =======
+# NOTE: Might be better to have a parametric DLChain{RatesPrior} type
 """
     DLChain
 
@@ -113,6 +117,9 @@ function mcmc!(chain::DLChain,
     for i=1:n
         :η in args ? nothing : move_η!(chain)
         move_constantrates!(chain)
+        if wgds
+            move_q!(chain)
+        end
         log_mcmc!(chain, stdout, show_trace, show_every)
     end
 end
