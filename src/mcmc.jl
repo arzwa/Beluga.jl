@@ -56,7 +56,7 @@ function MCMCChains.Chains(df::DataFrame, burnin=1000)
 end
 
 # get an MCMCChains chain (gives diagnostics etc.)
-MCMCChains.Chains(c::DLChain, burnin=1000) = Chains(c, burnin)
+MCMCChains.Chains(c::DLChain, burnin=1000) = Chains(c.trace, burnin)
 
 function get_defaultproposals(x::State)
     proposals = Proposals()
