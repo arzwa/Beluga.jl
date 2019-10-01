@@ -47,13 +47,16 @@ function DLChain(X::PArray, prior::RatesPrior, tree::SpeciesTree, m::Int64)
 end
 
 # get an MCMCChains chain (gives diagnostics etc.)
-function MCMCChains.Chains(c::DLChain, burnin=1000)
-    if size(c.trace)[1] < burnin
+function MCMCChains.Chains(df::DataFrame, burnin=1000)
+    if size(df)[1] < burnin
         @error "Trace not long enough to discard $burnin iterations as burn-in"
     end
-    X = reshape(Matrix(c.trace), (size(c.trace)...,1))[burnin+1:end, 2:end, :]
-    return Chains(X, [string(x) for x in names(c.trace)][2:end])
+    X = reshape(Matrix(df), (size(df)...,1))[burnin+1:end, 2:end, :]
+    return Chains(X, [string(x) for x in names(df)][2:end])
 end
+
+# get an MCMCChains chain (gives diagnostics etc.)
+MCMCChains.Chains(c::DLChain, burnin=1000) = Chains(c, burnin)
 
 function get_defaultproposals(x::State)
     proposals = Proposals()

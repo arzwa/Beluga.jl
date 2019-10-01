@@ -1,8 +1,29 @@
-# simulation of profiles and trees under (general) BDPs
-Base.rand(m::DuplicationLossWGD) = profile_fromtree(randtree(m))
+# Sampling from posterior predictive
+# ==================================
+# will be incuded in Beluga
+Base.rand(c::DLChain, burnin=1000) = randmodel(c.trace, c.tree, burnin)
 
-profile_fromtree(t::RecTree, s::SpeciesTree) =
-    countmap([s.leaves[t.σ[n]] for n in keys(t.leaves)])
+function randmodel(df::DataFrame, tree::SpeciesTree, burnin=1000)
+    i = rand(burnin+1:size(df)[1])
+    row = df[i,:]
+    λ = _getvec(row, :λ)
+    μ = _getvec(row, :μ)
+    q = _getvec(row, :q)
+    DuplicationLossWGD(tree, λ, μ, q, row[:η], 1000)
+end
+
+_getvec(x::DataFrameRow, s::Symbol) =
+    Float64[x[n] for n in names(x) if startswith(string(n), string(s))]
+
+
+# Simulation of profiles and trees from DL model
+# ==============================================
+Base.rand(m::DuplicationLossWGD) = profile_fromtree(randtree(m), m.tree)
+
+function profile_fromtree(t::RecTree, s::SpeciesTree)
+    d = Dict{Symbol,Int64}(x=>0 for x in values(s.leaves))
+    merge(d, countmap([s.leaves[t.σ[n]] for n in keys(t.leaves)]))
+end
 
 profile_fromtree(t::RecTree) = countmap([t.σ[n] for n in keys(t.leaves)])
 

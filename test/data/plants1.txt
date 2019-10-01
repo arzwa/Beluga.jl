@@ -1,0 +1,10 @@
+vvi,Vitis vinifera
+egr,Eucalyptus grandis
+ath,Arabidopsis thaliana
+mtr,Medicago truncatula
+ptr,Populus trichocarpa
+cqu,Chenopodium quinoa
+bvu,Beta vulgaris
+cpa,Carica papaya
+ugi,Utricularia gibba
+sly,Solanum lycopersicum

@@ -23,6 +23,7 @@ module Beluga
     include("mcmc.jl")
     include("gradient.jl")
     include("mle.jl")
+    include("sim.jl")
 
     export
         SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,

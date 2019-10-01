@@ -3,8 +3,8 @@ addprocs(2)
 @info "Added procs, now using $(nworkers()) processes"
 @everywhere using DistributedArrays, Beluga
 
-df = CSV.read("data/counts1.tsv", delim="\t"); deletecols!(df, :Orthogroup)
-tree = SpeciesTree("data/tree1.nw")
+df = CSV.read("data/hexapods1-10.tsv", delim="\t"); deletecols!(df, :Orthogroup)
+tree = SpeciesTree("data/hexapods1.nw")
 
 @testset "PArray (distributed; 2 workers)" begin
     p, m = Profile(df, tree)
