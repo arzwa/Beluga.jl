@@ -64,7 +64,7 @@ function get_defaultproposals(x::State)
     for (k, v) in x
         if k ∈ [:logπ, :logp]
             continue
-        elseif k == :q
+        elseif string(k)[1] == 'q' || k == :w
             proposals[k] = [AdaptiveUnitProposal(0.2) for i=1:length(v)]
         elseif typeof(v) <: AbstractArray
             proposals[k] = [AdaptiveScaleProposal(0.1) for i=1:length(v)]

@@ -1,4 +1,5 @@
 
+# Nice thing this is unrelated to the implementation of the MixtureChain
 # Profiles for MixtureModeling
 # ============================
 mutable struct MixtureProfile{V<:Real} <: AbstractProfile
@@ -28,6 +29,7 @@ end
 const MPArray = DArray{MixtureProfile,1,Array{MixtureProfile,1}}
 
 getcomponent(p::MPArray, z::Int64) = p[[i for i in 1:length(p) if p[i].z == z]]
+StatsBase.countmap(p::MPArray) = countmap([x.z for x in p])
 
 
 # logpdf functions
