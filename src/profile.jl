@@ -14,7 +14,7 @@ mutable struct Profile{V<:Real} <: AbstractProfile
 end
 
 Profile(T::Type, x::Vector{Int64}, n::Int64) =
-    Profile{T}(x, minfs(T, n, maximum(x)), minfs(T, n, maximum(x)))
+    Profile{T}(x, minfs(T, n, maximum(x)+1), minfs(T, n, maximum(x)+1))
 
 Profile() = distribute(
     Profile[Profile{Float64}(zeros(0), zeros(0,0), zeros(0,0))])

@@ -28,12 +28,12 @@ prior3 = Beluga.NhRatesPrior(
 # DL model
 # ========
 s = SpeciesTree("test/data/plants1.nw")
-df = CSV.read("test/data/plants1-10.tsv", delim=",")
+df = CSV.read("test/data/plants1-100.tsv", delim=",")
 deletecols!(df, :Orthogroup)
 p, m = Profile(df, s)
 #p = Profile()  # prior alone
 chain = DLChain(p, prior2, s, m)
-chn = mcmc!(chain, 11000, show_every=100)
+chn = mcmc!(chain, 11000, show_every=1)
 
 
 # DL+WGD

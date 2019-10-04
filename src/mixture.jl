@@ -1,7 +1,7 @@
 # MCMC with a (DP) mixture
-abstract type MixtureModel end
-abstract type DPMixture end
-const ChainOrCluster = Union{Chain,Cluster}
+abstract type PhyloMixtureModel end
+abstract type DPMixture <: PhyloMixtureModel end
+abstract type FiniteMixture <: PhyloMixtureModel end
 
 # Chain for the Mixture models
 # ============================
@@ -21,26 +21,63 @@ Base.getindex(w::Cluster, s::Symbol, i::Int64) = w.state[s, i]
 Base.setindex!(w::Cluster, x, s::Symbol) = w.state[s] = x
 Base.setindex!(w::Cluster, x, s::Symbol, i::Int64) = w.state[s, i] = x
 
-function logpdf!(cluster::Cluster, X::MixtureProfile)
-    # this function computes logpdf for `cluster` for all profiles in X
-    logpdf!()
-end
-
-function logpdf!(clusters::Vector{Cluster}, X::MixtureProfile)
-    # this function computes the logpdf for each family for the current mixture
-    # based on its assignment
-end
-
 # it would probably work better if either the cluster or the PArray stores z
-mutable struct MixtureChain{T<:MixtureModel,V<:PhyloBDP} <: Chain
-    X::PArray
+mutable struct MixtureChain{T<:PhyloMixtureModel,V<:PhyloBDP} <: Chain
+    X::MPArray
     tree::SpeciesTree
     state::State           # state for hyperparameters
-    priors::Priors         # priors
+    priors::RatesPrior         # priors
     proposals::Proposals   # proposals for hyperparameters
-    mixturemodel::T
     clusters::Array{Cluster{V},1}
 end
+
+function MixtureChain(X::MPArray,
+        prior::RatesPrior,
+        tree::SpeciesTree,
+        K::Int64, m::Int64)
+    init = rand(prior, tree)
+    init[:gen] = 0
+    proposals = get_defaultproposals(init)
+    for k in keys(init)  # UGLY
+        if (k == :λ || k == :μ || k == :q)
+            delete!(init, k)
+            delete!(proposals, k)
+        end
+    end
+    w = rand(Dirichlet(K, 1.))
+    z = rand(Categorical(w), length(X))
+    n = countmap(z)
+    clusters = [init_cluster(prior, tree, init[:η], m, w[i], n[i]) for i=1:K]
+    for (k,c) in enumerate(clusters)
+        logpdf!(c.model, X, k, -1)
+        logpdf_allother!(c.model, X, k, -1)
+        set_L!(X, k)
+    end
+    MixtureChain{FiniteMixture,DuplicationLossWGD}(
+        X, tree, init, prior, proposals, clusters)
+end
+
+
+function init_cluster(prior, tree, η, m, w, n)
+    init = rand(prior, tree)
+    @show init
+    init[:gen] = 0
+    proposals = get_defaultproposals(init)
+    for k in keys(init)  # UGLY
+        if !(k == :λ || k == :μ || k == :q)
+            delete!(init, k)
+            delete!(proposals, k)
+        end
+    end
+    init[:logπ] = logprior()
+    model = DuplicationLossWGD(tree, init[:λ], init[:μ], init[:q], η, m)
+    Cluster{DuplicationLossWGD}(0, w, model, init, proposals)
+end
+
+
+set_logpdf!(mchain::MixtureChain) = mchain.state[:logp] = curr_logpdf(mchain)
+curr_logpdf(mchain::MixtureChain) = mapreduce(x->x.l[x.z], +, mchain.X)
+
 
 # NOTE: Profile should be different for mixture case; would be good if it
 # stored L matrices and likelihoods for all clusters, as well as the current
@@ -71,8 +108,8 @@ function _move_latent_assignment!(x, clusters)
 end
 
 function move_hyperparams!(chain)
-    move_ν!(chain)  # reuse from non-mixture MCMC
-    move_η!(chain)  # partly reuse from non-mixture MCMC TODO
+    move_ν!(chain)
+    move_η!(chain)
 end
 
 # TODO weights!

@@ -5,15 +5,18 @@ mutable struct MixtureProfile{V<:Real} <: AbstractProfile
     # this stores likelihood matrices for each cluster
     # may start to eat a lot of memory when many clusters are used...
     x::Vector{Int64}
-    L::Array{Matrix{V}}
-    Ltmp::Array{Matrix{V}}
+    L::Array{Matrix{V},1}
+    Ltmp::Array{Matrix{V},1}
     l::Vector{V}
     ltmp::Vector{V}
     z::Int64
 end
 
 MixtureProfile(T::Type, x::Vector{Int64}, n::Int64, K::Int64, m=maximum(x)) =
-    MixtureProfile{T}(x, minfs(T, n, m), minfs(T, n, m), zeros(K), 1)
+    MixtureProfile{T}(x,
+        [minfs(T, n, m+1) for i=1:K],
+        [minfs(T, n, m+1) for i=1:K],
+        zeros(K), zeros(K), rand(1:K))
 
 function MixtureProfile(df::DataFrame, tree::Arboreal, K::Int64)
     X = profile(tree, df)
@@ -24,43 +27,43 @@ end
 
 const MPArray = DArray{MixtureProfile,1,Array{MixtureProfile,1}}
 
-getcomponent(p::MPArray, z::Int64) = p[[i for i in 1:length(p) if p[i].z == i]]
+getcomponent(p::MPArray, z::Int64) = p[[i for i in 1:length(p) if p[i].z == z]]
 
+
+# logpdf functions
+# ===============
+# These are required for the MCMC algorithm for finite mixtures
 # compute logpdf, assuming only component k changed
-function Distributions.logpdf!(d::PhyloBDP, p::MPArray, i::Int64, k::Int64)
-    if length(p[1].x) == 0.  # HACK
-        return 0.
-    end
-    branches = i == -1 ? m.tree.order : m.tree.pbranches[i]
-    mapreduce((x)-> x.z == k ? logpdf!(x, k, branches) : x.logp[x.z], +, p)
+function logpdf!(d::PhyloBDP, p::MPArray, k::Int64, i::Int64)
+    if length(p[1].x) == 0. ; return 0.; end  # HACK
+    branches = i == -1 ? d.tree.order : d.tree.pbranches[i]
+    mapreduce((x)-> x.z == k ? logpdf!(d, x, k, branches) : x.l[x.z], +, p)
 end
 
 # compute logpdf for all families for their assignments
-function Distributions.logpdf!(d::PhyloBDP, p::MPArray, i::Int64)
-    if length(p[1].x) == 0.  # HACK
-        return 0.
-    end
-    branches = i == -1 ? m.tree.order : m.tree.pbranches[i]
-    mapreduce((x)-> logpdf!(x, x.z, branches), +, p)
+function logpdf!(d::Array{<:PhyloBDP,1}, p::MPArray, i::Int64)
+    if length(p[1].x) == 0. ; return 0.; end  # HACK
+    branches = i == -1 ? d[1].tree.order : d[1].tree.pbranches[i]
+    mapreduce((x)-> logpdf!(d[x.z], x, x.z, branches), +, p)
 end
 
 # compute logpdfs for cluster k for all families not assigned to k
-function logpdf_allother!(d::PhyloBDP, p::MPArray,
-        i::Int64, k::Int64)
-    if length(p[1].x) == 0.  # HACK
-        return 0.
-    end
-    branches = i == -1 ? m.tree.order : m.tree.pbranches[i]
-    mapreduce((x)-> x.z == k ? x.logp[k] : logpdf!(x, k, branches), +, p)
+function logpdf_allother!(d::PhyloBDP, p::MPArray, k::Int64, i::Int64)
+    if length(p[1].x) == 0. ; return 0.; end  # HACK
+    branches = i == -1 ? d.tree.order : d.tree.pbranches[i]
+    mapreduce((x)-> x.z == k ? x.l[k] : logpdf!(d, x, k, branches), +, p)
 end
 
-
-function logpdf!(x::MixtureProfile, k::Int64, branches::Array{Int64})
-    l = logpdf!(x.Ltmp[k], m, x.x, branches)
+function logpdf!(d::PhyloBDP, x::MixtureProfile, k::Int64,
+        branches::Array{Int64})
+    l = Distributions.logpdf!(x.Ltmp[k], d, x.x, branches)
     x.ltmp[k] = l
     l
 end
 
+
+# caching functions
+# =================
 set_Ltmp!(p::MPArray, k) = ppeval((x)->_set_Ltmp!(x, k), p)
 set_L!(p::MPArray, k) = ppeval((x)->_set_L!(x, k), p)
 

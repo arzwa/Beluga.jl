@@ -1,20 +1,3 @@
-# Sampling from posterior predictive
-# ==================================
-# will be incuded in Beluga
-Base.rand(c::DLChain, burnin=1000) = randmodel(c.trace, c.tree, burnin)
-
-function randmodel(df::DataFrame, tree::SpeciesTree, burnin=1000)
-    i = rand(burnin+1:size(df)[1])
-    row = df[i,:]
-    λ = _getvec(row, :λ)
-    μ = _getvec(row, :μ)
-    q = _getvec(row, :q)
-    DuplicationLossWGD(tree, λ, μ, q, row[:η], 1000)
-end
-
-_getvec(x::DataFrameRow, s::Symbol) =
-    Float64[x[n] for n in names(x) if startswith(string(n), string(s))]
-
 
 # Simulation of profiles and trees from DL model
 # ==============================================
