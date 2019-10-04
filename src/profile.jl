@@ -1,28 +1,28 @@
 # struct to store the data, enabling recomputation etc. Not that this is a
 # fairly tedious interface if partial recomputation is not needed.
+abstract type AbstractProfile end
+
 """
     Profile{V<:Real}
 
 Struct for a phylogenetic profile of a single family.
 """
-mutable struct Profile{V<:Real}
+mutable struct Profile{V<:Real} <: AbstractProfile
     x::Vector{Int64}
     L::Matrix{V}
     Ltmp::Matrix{V}
 end
+
+Profile(T::Type, x::Vector{Int64}, n::Int64) =
+    Profile{T}(x, minfs(T, n, maximum(x)), minfs(T, n, maximum(x)))
 
 Profile() = distribute(
     Profile[Profile{Float64}(zeros(0), zeros(0,0), zeros(0,0))])
 
 function Profile(df::DataFrame, tree::Arboreal)
     X = profile(tree, df)
-    D = Profile[]
-    n = size(X)[2]
-    for i=1:size(X)[1]
-        push!(D, Profile{Float64}(X[i,:],
-            minfs(Float64, n, maximum(X[i,:])+1),
-            minfs(Float64, n, maximum(X[i,:])+1)))
-    end
+    N, n = size(X)
+    D = Profile[Profile(Float64, X[i,:], n) for i=1:N]
     distribute(D), maximum(X)
 end
 

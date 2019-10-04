@@ -1,9 +1,7 @@
-# MCMC with a DP mixture
-abstract type Chain end
+# MCMC with a (DP) mixture
 abstract type MixtureModel end
 abstract type DPMixture end
-const State = Dict{Symbol,Union{Vector{<:Real},<:Real}}
-
+const ChainOrCluster = Union{Chain,Cluster}
 
 # Chain for the Mixture models
 # ============================
@@ -18,11 +16,24 @@ mutable struct Cluster{T<:PhyloBDP}  # mutable, since the model will change
     proposals::Proposals
 end
 
+Base.getindex(w::Cluster, s::Symbol) = w.state[s]
+Base.getindex(w::Cluster, s::Symbol, i::Int64) = w.state[s, i]
+Base.setindex!(w::Cluster, x, s::Symbol) = w.state[s] = x
+Base.setindex!(w::Cluster, x, s::Symbol, i::Int64) = w.state[s, i] = x
+
+function logpdf!(cluster::Cluster, X::MixtureProfile)
+    # this function computes logpdf for `cluster` for all profiles in X
+    logpdf!()
+end
+
+function logpdf!(clusters::Vector{Cluster}, X::MixtureProfile)
+    # this function computes the logpdf for each family for the current mixture
+    # based on its assignment
+end
+
 # it would probably work better if either the cluster or the PArray stores z
 mutable struct MixtureChain{T<:MixtureModel,V<:PhyloBDP} <: Chain
     X::PArray
-    z::Array{Int64}    # latent assignments XXX should this be here?
-    gen::Int64
     tree::SpeciesTree
     state::State           # state for hyperparameters
     priors::Priors         # priors
@@ -43,6 +54,7 @@ end
 function move_latent_assignment!(chain)
     # distributed computation of new latent assignments
     # XXX is this possible, or does this screw up something with the weights?
+    # I think it might only screw up the weights in case of the DP mixture?
     map((x)->_gibbs_latent_assignment!(x, chain.clusters), chain.X)
 end
 
@@ -50,8 +62,8 @@ end
 # and  p(zᵢ|θ, xᵢ) ∝ p(zᵢ)p(xᵢ|θzᵢ) = wᵢ p(xᵢ|θzᵢ)
 function _move_latent_assignment!(x, clusters)
     # this does not a lot of work, as we assume logpdfs are stored
-    logps = x.logp .+ [log(c.w) for c in clusters]
-    pvec  = exp(logps - maximum(logps))
+    logp  = x.logp .+ [log(c.w) for c in clusters]
+    pvec  = exp(logp - maximum(logp))
     pvec /= sum(pvec)
     i = rand(Categorical(pvec))
     clusters[i].n += 1
@@ -60,8 +72,10 @@ end
 
 function move_hyperparams!(chain)
     move_ν!(chain)  # reuse from non-mixture MCMC
-    move_η!(chain)  # partly reuse from non-mixture MCMC
+    move_η!(chain)  # partly reuse from non-mixture MCMC TODO
 end
+
+# TODO weights!
 
 function move_clusterparams!(chain)
     # for computing the MH ratio, we only need to compute the lhood for the
@@ -69,13 +83,44 @@ function move_clusterparams!(chain)
     # *upon acceptance* of an update we should recompute the logpdf for all
     # families, as we need this lhood in the next iteration of drawing latent
     # assignments.
-    for cluster in chain.clusters
-        # reuse from non-mixture MCMC, perhaps using a type union?
-        for f in [move_rates!, move_wgds!]
-            accepted = f(cluster)
-            if accepted
-                logpdf!(cluster, chain.X)
-            end
+    # Actually; we probably want to compute the logpdfs for all clusters just
+    # once at the end of this function
+    for (k, c) in enumerate(chain.clusters)
+        move_rates!(c, chain.X, chain.priors, chain.tree, chain.state, k)
+        logpdf_allother!(c.model, chain.X, -1, k)
+        set_L!(chain.X, k)
+        # TODO add wgds
+    end
+end
+
+# initially perhaps better to keep it separated from non-mixture case...
+function move_rates!(cluster, data, priors, tree, state, gen, k)
+    seen = Set{Int64}()  # HACK store indices that were already done
+    for i in tree.order
+        idx = tree[i,:θ]
+        idx in seen ? continue : push!(seen, idx)
+        prop = cluster.proposals[:λ,idx]
+        λi, hr1 = prop(cluster[:λ,idx])
+        μi, hr2 = prop(cluster[:μ,idx])
+        p_ = logprior(priors, cluster.state, tree,
+            :λ=>(idx, λi), :μ=>(idx, μi))  # prior
+        d = deepcopy(cluster.model)
+        d[:μ, i] = μi   # NOTE: implementation of setindex! uses node indices!
+        d[:λ, i] = λi   # NOTE: implementation of setindex! uses node indices!
+        l_ = logpdf!(d, data, i, k)  # likelihood
+        # NOTE: loglikelihood from global chain; logprior from cluster!
+        mhr = l_ + p_ - state[:logp] - chain[:logπ] + hr1 + hr2
+        if log(rand()) < mhr
+            set_L!(data, k)    # update L matrix
+            cluster.model = d
+            cluster[:λ, idx] = λi
+            cluster[:μ, idx] = μi
+            cluster[:logπ] = p_
+            state[:logp] = l_
+            prop.accepted += 1
+        else
+            set_Ltmp!(data, k)  # revert Ltmp matrix
         end
+        consider_adaptation!(prop, chain[:gen])
     end
 end

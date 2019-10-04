@@ -3,8 +3,9 @@
 # would be nice (idem for the SpeciesTree & SlicedTree)
 
 abstract type Chain end
-
 const State = Dict{Symbol,Union{Vector{Float64},Float64}}
+Base.getindex(state::State, s::Symbol, i::Int64) = state[s][i]
+Base.setindex!(state::State, x, s::Symbol, i::Int64) = state[s][i] = x
 
 
 # DLChain
@@ -17,7 +18,6 @@ Chain object; storing both the data, state, proposals, trace and priors.
 """
 mutable struct DLChain <: Chain
     X::PArray
-    gen::Int64
     tree::SpeciesTree
     trace::DataFrame
     model::DuplicationLossWGD
@@ -41,9 +41,10 @@ initial state.
 """
 function DLChain(X::PArray, prior::RatesPrior, tree::SpeciesTree, m::Int64)
     init = rand(prior, tree)
+    init[:gen] = 0
     proposals = get_defaultproposals(init)
     model = DuplicationLossWGD(tree, init[:λ], init[:μ], init[:q], init[:η], m)
-    return DLChain(X, 0, tree, DataFrame(), model, init, prior, proposals)
+    return DLChain(X, tree, DataFrame(), model, init, prior, proposals)
 end
 
 # get an MCMCChains chain (gives diagnostics etc.)
@@ -83,8 +84,8 @@ end
 Evaluate prior for the current state and arbitrary modified parameters
 (args...). For example: `logprior(chain, :ν=>0.2, :λ=>rand(10))`.
 """
-function logprior(chain::DLChain, args...)
-    s = deepcopy(chain.state)
+function logprior(priors, state, tree, args...)
+    s = deepcopy(state)
     for (k,v) in args
         if haskey(s, k)
             typeof(v)<:Tuple ? s[k][v[1]] = v[2] : s[k] = v
@@ -92,9 +93,11 @@ function logprior(chain::DLChain, args...)
             @warn "Trying to set unexisting variable ($k)"
         end
     end
-    logprior(chain.priors, s, chain.tree)
+    logprior(priors, s, tree)
 end
 
+logprior(chain::DLChain, args...) =
+    logprior(chain.priors, chain.state, chain.tree, args...)
 logprior(c::DLChain, θ::NamedTuple) = logprior(c.priors, θ)
 
 
@@ -171,20 +174,20 @@ function init_mcmc!(chain)
 end
 
 function log_mcmc!(chain, io, show_trace, show_every)
-    chain.gen += 1
-    if chain.gen == 1
+    gen = chain[:gen] += 1
+    if gen == 1
         init_trace!(chain, io, show_trace)
     end
-    x = vcat(chain.gen, [x for x in values(chain.state)]...)
+    x = vcat([x for x in values(chain.state)]...)
     push!(chain.trace, x)
-    if show_trace && chain.gen % show_every == 0
+    if show_trace && gen % show_every == 0
         write(io, join(x, ","), "\n")
     end
     flush(stdout)
 end
 
 function init_trace!(chain, io, show_trace)
-    x = vcat("gen", [typeof(v)<:AbstractArray ?
+    x = vcat([typeof(v)<:AbstractArray ?
             ["$k$i" for i in 1:length(v)] : k for (k,v) in chain.state]...)
     chain.trace = DataFrame(zeros(0,length(x)), [Symbol(k) for k in x])
     show_trace ? write(io, join(x, ","), "\n") : nothing
@@ -204,7 +207,7 @@ function move_ν!(chain::DLChain)
         chain[:ν] = ν_
         prop.accepted += 1
     end
-    consider_adaptation!(prop, chain.gen)
+    consider_adaptation!(prop, chain[:gen])
 end
 
 function move_η!(chain::DLChain)
@@ -223,7 +226,7 @@ function move_η!(chain::DLChain)
         prop.accepted += 1
         # NB: changing η does not change L matrices
     end
-    consider_adaptation!(prop, chain.gen)
+    consider_adaptation!(prop, chain[:gen])
 end
 
 function move_constantrates!(chain::DLChain)
@@ -247,7 +250,7 @@ function move_constantrates!(chain::DLChain)
     else
         set_Ltmp!(chain.X)  # revert Ltmp matrix
     end
-    consider_adaptation!(prop, chain.gen)
+    consider_adaptation!(prop, chain[:gen])
 end
 
 function move_rates!(chain::DLChain)
@@ -275,7 +278,7 @@ function move_rates!(chain::DLChain)
         else
             set_Ltmp!(chain.X)  # revert Ltmp matrix
         end
-        consider_adaptation!(prop, chain.gen)
+        consider_adaptation!(prop, chain[:gen])
     end
 end
 
@@ -302,7 +305,7 @@ function move_allrates!(chain::DLChain)
     else
         set_Ltmp!(chain.X)  # revert Ltmp matrix
     end
-    consider_adaptation!(prop, chain.gen)
+    consider_adaptation!(prop, chain[:gen])
 end
 
 function move_q!(chain::DLChain)
@@ -326,7 +329,7 @@ function move_q!(chain::DLChain)
         else
             set_Ltmp!(chain.X)  # revert Ltmp matrix
         end
-        consider_adaptation!(prop, chain.gen)
+        consider_adaptation!(prop, chain[:gen])
     end
 end
 

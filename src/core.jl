@@ -31,9 +31,9 @@ Note: This implements an indexer, for an instance `m` of DuplicationLossWGD,
 """
 mutable struct DuplicationLossWGD{T<:Real,Ψ<:Arboreal} <: PhyloBDP
     tree::Ψ
-    λ::Vector{T}
-    μ::Vector{T}
-    q::Vector{T}
+    λ::Vector{T}  # AbstractVector when we want to use Tracker?
+    μ::Vector{T}  # AbstractVector when we want to use Tracker?
+    q::Vector{T}  # AbstractVector when we want to use Tracker?
     η::T  # geometric prior probability at the root
     value::CsurosMiklos{T}
 end
@@ -79,12 +79,13 @@ function Base.setindex!(d::DuplicationLossWGD{T,Ψ}, v::T, s::Symbol,
 end
 
 # vector based constructor (to core.jl?)
-function (d::DuplicationLossWGD)(θ::Vector)
+function (d::DuplicationLossWGD)(θ::AbstractArray{T,1}, η=θ[end]) where T<:Real
     @unpack tree, value = d
-    η = pop!(θ)
-    q = [pop!(θ) for i=1:nwgd(d.tree)]
-    μ = [pop!(θ) for i=1:length(θ)÷2]
-    DuplicationLossWGD(tree, θ, μ, q, η, value.m)
+    n = nrates(tree)
+    q = θ[2n+1:end-1]
+    λ = θ[1:n]
+    μ = θ[n+1:2n]
+    DuplicationLossWGD(tree, λ, μ, q, η, value.m)
 end
 
 asvector(d::DuplicationLossWGD) = [d.λ ; d.μ ; d.q ; d.η ]
