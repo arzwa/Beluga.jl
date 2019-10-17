@@ -13,7 +13,7 @@ module Beluga
     using CSV
     using MCMCChains
     import StatsFuns: logaddexp, log1mexp, log1pexp
-    # using BirthDeathProcesses
+    import Distributions: logpdf!, logpdf
 
     include("speciestree.jl")
     include("core.jl")
@@ -24,10 +24,13 @@ module Beluga
     include("gradient.jl")
     include("mle.jl")
     include("sim.jl")
+    include("mprofile.jl")
+    include("mixture.jl")
 
     export
         SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,
         logpdf, logpdf!, Profile, PArray, set_L!, set_Ltmp!, GBM, mcmc!,
         DLChain, GBMRatesPrior, LogUniform, ConstantRatesPrior, NhRatesPrior,
-        IIDRatesPrior, nrates, nwgd, gradient, mle, addwgd!
+        IIDRatesPrior, nrates, nwgd, gradient, mle, addwgd!, MixtureChain,
+        MixtureProfile
 end

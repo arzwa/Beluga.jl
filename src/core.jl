@@ -101,13 +101,13 @@ function _logpdf(d::DuplicationLossWGD{T,Ψ},
     (l=l, L=L)
 end
 
-function Distributions.logpdf(d::DuplicationLossWGD{T,Ψ},
+function logpdf(d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
     L = minfs(T, length(d.tree), maximum(x)+1)
     logpdf!(L, d, x, d.tree.order)  # returns only likelihood
 end
 
-function Distributions.logpdf!(L::Matrix{T},
+function logpdf!(L::Matrix{T},
         d::DuplicationLossWGD{T,Ψ},
         x::Vector{Int64},
         branches::Vector{Int64}) where {Ψ<:Arboreal,T<:Real}
@@ -124,7 +124,7 @@ end
 # Different interface (than profile) to compute the accumulated logpdf over
 # multiple phylogenetic profiles, note that it is in fact slower than the
 # Profile approach
-function Distributions.logpdf(d::DuplicationLossWGD{T,Ψ},
+function logpdf(d::DuplicationLossWGD{T,Ψ},
         X::AbstractMatrix{Int64}) where {Ψ<:Arboreal,T<:Real}
     m = maximum(X)
     L = minfs(T, size(X)..., m+1)

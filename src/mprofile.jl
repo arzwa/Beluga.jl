@@ -10,14 +10,14 @@ mutable struct MixtureProfile{V<:Real} <: AbstractProfile
     Ltmp::Array{Matrix{V},1}
     l::Vector{V}
     ltmp::Vector{V}
-    z::Int64
+    ztrace::Vector{Int64}
 end
 
 MixtureProfile(T::Type, x::Vector{Int64}, n::Int64, K::Int64, m=maximum(x)) =
     MixtureProfile{T}(x,
         [minfs(T, n, m+1) for i=1:K],
         [minfs(T, n, m+1) for i=1:K],
-        zeros(K), zeros(K), rand(1:K))
+        zeros(K), zeros(K), Int64[rand(1:K)])
 
 function MixtureProfile(df::DataFrame, tree::Arboreal, K::Int64)
     X = profile(tree, df)
@@ -29,8 +29,14 @@ end
 const MPArray = DArray{MixtureProfile,1,Array{MixtureProfile,1}}
 
 getcomponent(p::MPArray, z::Int64) = p[[i for i in 1:length(p) if p[i].z == z]]
+assignments(p::MPArray) = [pi.z for pi in p]
 StatsBase.countmap(p::MPArray) = countmap([x.z for x in p])
+StatsBase.counts(p::MPArray, K::Int64) = counts([x.z for x in p], 1:K)
 
+Base.getproperty(p::MixtureProfile, x::Symbol) =
+    x == :z ? getfield(p, :ztrace)[end] : getfield(p, x)
+Base.setproperty!(p::MixtureProfile, x::Symbol, v) =
+    x == :z ? setfield!(p, :ztrace, [p.ztrace ; v]) : setfield!(p, x, v)
 
 # logpdf functions
 # ===============

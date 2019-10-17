@@ -2,7 +2,11 @@
 
 # Chain for the Mixture models
 # ============================
+"""
+    MixtureChain
 
+This should work for both finite and infinite mixtures
+"""
 mutable struct MixtureChain <: Chain
     X::MPArray
     tree::SpeciesTree
@@ -13,12 +17,19 @@ mutable struct MixtureChain <: Chain
     trace::DataFrame
 end
 
+Base.display(mchain::Chain) = display(sort(mchain.state))
+Base.getproperty(mchain::Chain, s::Symbol) = s == :z ?
+    assignments(mchain.X) : getfield(mchain, s)
+
 function MixtureChain(X::MPArray, prior::RatesPrior, tree::SpeciesTree,
         K::Int64, m::Int64)
-    @unpack state, models, proposals = init_finitemixture(prior, s, K, m)
+    @unpack state, models, proposals = init_finitemixture(prior, tree, K, m)
     mchain = MixtureChain(X, tree, state, models, prior, proposals, DataFrame())
     l = logpdf!(mchain.models, X, -1)
-    for i=1:K ; set_L!(mchain.X, i); end
+    for i=1:K
+        logpdf_allother!(mchain.models[i], X, i, -1)
+        set_L!(mchain.X, i)
+    end
     set_logpdf!(mchain)
     mchain
 end
@@ -39,7 +50,8 @@ function init_finitemixture(prior, tree, K, m)
         push!(models, DuplicationLossWGD(
             tree, cluster[:λ], cluster[:μ], cluster[:q], init[:η], m))
     end
-    init[:w] = rand(Dirichlet(K,1.))
+    #init[:w] = rand(Dirichlet(K,1.))
+    init[:w] = [1.0/K for i=1:K]
     init[:logπ] = logprior(tree, init, prior, K)
     proposals = get_defaultproposals(init)
     (state=init, proposals=proposals, models=models)
@@ -56,6 +68,7 @@ end
 
 function logprior(tree::SpeciesTree, state::State, priors, K, args...)
     s = deepcopy(state)
+    !haskey(s, :ν) ? s[:ν] = -1. : nothing  # HACK to work with constant rates
     for (k, v) in args
         if haskey(s, k)
             typeof(v)<:Tuple ? s[k][v[1]] = v[2] : s[k] = v
@@ -81,12 +94,47 @@ end
 # latent assignments easily; as there is conditional independence of the zᵢ
 # and z₋ᵢ given the weights
 
-function mcmc!(chain, n; show_trace=true, show_every=10)
+function mcmc!(chain::MixtureChain, n; show_trace=true, show_every=10)
+    display(sort(chain.state))
     for i=1:n
         move_latent_assignment!(chain)
+        move_η!(chain)
         move_clusterparams!(chain)
+        chain[:gen] % show_every == 0 ? display(sort(chain.state)) : nothing
         log_mcmc!(chain, stdout, show_trace, show_every)
     end
+end
+
+function move_η!(chain)
+    # changing η does not change L matrices, but does alter logpdfs.
+    # so we could optimize set_L(tmp) for this case?
+    prop = chain.proposals[:η]
+    η_, hr = prop(chain[:η])
+    p_ = logprior(chain, :η=>η_)  # prior
+    models_ = eltype(chain.models)[]
+    for (k, c) in enumerate(chain.models)
+        d = deepcopy(c)
+        d.η = η_
+        push!(models_, d)
+    end
+    l_  = logpdf!(models_, chain.X, 1)  # likelihood;
+    mhr = p_ + l_ - chain[:logπ] - chain[:logp] + hr
+    if log(rand()) < mhr
+        chain.models[1:end] .= models_
+        for (k, c) in enumerate(chain.models)
+            logpdf_allother!(c, chain.X, 1, k)  # XXX necessary?
+            set_L!(chain.X, k)
+        end
+        chain[:logp] = l_
+        chain[:logπ] = p_
+        chain[:η] = η_
+        prop.accepted += 1
+    else
+        for (k, c) in enumerate(chain.models)
+            set_Ltmp!(chain.X, k)
+        end
+    end
+    consider_adaptation!(prop, chain[:gen])
 end
 
 # gibbs sampler for latent assignments (parallel)
@@ -94,8 +142,16 @@ function move_latent_assignment!(chain)
     # distributed computation of new latent assignments
     # XXX is this possible, or does this screw up something with the weights?
     # I think it might only screw up the weights in case of the DP mixture?
+    # Not sure, it might just be inefficient to alter weights and assignments
+    # independently, but there shouldn't be anything wrong with that in theory.
+    # I guess we can just put the weights to the fraction currently assigned?
     logweights = log.(chain[:w])
     map((x)->_move_latent_assignment!(x, logweights), chain.X)
+    count = counts(chain.X, length(chain.models))
+    chain[:w] .= rand(Dirichlet(count .+ 1))
+    # FIXME hardcoded uniform Dirichlet prior, using conjugacy:
+    # http://halweb.uc3m.es/esp/Personal/personas/causin/eng/2011-2012/Bayes/
+    # chapter_12.pdf, would be etter to have α with hyperprior
     set_logpdf!(chain)
 end
 
@@ -122,6 +178,9 @@ function move_clusterparams!(chain)
     for (k, c) in enumerate(chain.models)
         move_rates!(chain, k)
         logpdf_allother!(c, chain.X, k, -1)
+        # ↑ in the rare case that no param has changed for cluster k this will
+        # be wasteful. NOTE: in the constant-rates model this won't be that
+        # rare...
         set_L!(chain.X, k)
         # TODO add wgds
     end
@@ -142,8 +201,7 @@ function move_rates!(chain, k)
         d = deepcopy(chain.models[k])
         d[:μ, i] = μi   # NOTE: implementation of setindex! uses node indices!
         d[:λ, i] = λi   # NOTE: implementation of setindex! uses node indices!
-        l_ = logpdf!(d, chain.X, i, k)  # likelihood
-        # NOTE: loglikelihood from global chain; logprior from cluster!
+        l_ = logpdf!(d, chain.X, k, i)  # likelihood
         mhr = l_ + p_ - chain[:logp] - chain[:logπ] + hr1 + hr2
         if log(rand()) < mhr
             set_L!(chain.X, k)    # update L matrix
