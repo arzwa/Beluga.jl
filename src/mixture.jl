@@ -1,11 +1,16 @@
 # MCMC with a (DP) mixture
-
+# TODO: α of the dirichlet as a hyperparameter
+# TODO: ν at the cluster level?
+# NOTE: in the finite mixture case; we can parallelize the Gibbs sampler for
+# latent assignments easily; as there is conditional independence of the zᵢ
+# and z₋ᵢ given the weights; how about the infinite mixture?
 # Chain for the Mixture models
 # ============================
 """
-    MixtureChain
+    MixtureChain(X::MPArray,
+        prior::RatesPrior, tree::SpeciesTree, K::Int64, m::Int64)
 
-This should work for both finite and infinite mixtures
+This should work for both finite and infinite mixtures.
 """
 mutable struct MixtureChain <: Chain
     X::MPArray
@@ -18,15 +23,16 @@ mutable struct MixtureChain <: Chain
 end
 
 Base.display(mchain::Chain) = display(sort(mchain.state))
-Base.getproperty(mchain::Chain, s::Symbol) = s == :z ?
-    assignments(mchain.X) : getfield(mchain, s)
+Base.getproperty(mchain::Chain, s::Symbol) =
+    s == :z ? assignments(mchain.X) :
+    s == :K ? length(mchain.models) : getfield(mchain, s)
 
 function MixtureChain(X::MPArray, prior::RatesPrior, tree::SpeciesTree,
         K::Int64, m::Int64)
     @unpack state, models, proposals = init_finitemixture(prior, tree, K, m)
     mchain = MixtureChain(X, tree, state, models, prior, proposals, DataFrame())
     l = logpdf!(mchain.models, X, -1)
-    for i=1:K
+    for i=1:K  # compute for each family the DP matrix and lhood for each k
         logpdf_allother!(mchain.models[i], X, i, -1)
         set_L!(mchain.X, i)
     end
@@ -36,6 +42,7 @@ end
 
 function init_finitemixture(prior, tree, K, m)
     init = rand(prior, tree)
+    !haskey(init, :ν) ? s[:ν] = -1. : nothing  # HACK to work with const rates
     init[:gen] = 0; init[:logπ] = 0
     clusterparams = [:λ, :μ, :q]
     for p in clusterparams
@@ -50,14 +57,15 @@ function init_finitemixture(prior, tree, K, m)
         push!(models, DuplicationLossWGD(
             tree, cluster[:λ], cluster[:μ], cluster[:q], init[:η], m))
     end
-    #init[:w] = rand(Dirichlet(K,1.))
-    init[:w] = [1.0/K for i=1:K]
+    init[:w] = rand(Dirichlet(K,1.))
     init[:logπ] = logprior(tree, init, prior, K)
     proposals = get_defaultproposals(init)
     (state=init, proposals=proposals, models=models)
 end
 
 
+# logpdf and prior functions
+# ==========================
 set_logpdf!(mchain::MixtureChain) = mchain.state[:logp] = curr_logpdf(mchain)
 curr_logpdf(mchain::MixtureChain) = mapreduce(x->x.l[x.z], +, mchain.X)
 
@@ -66,9 +74,11 @@ function logprior(mchain::MixtureChain, args...)
     logprior(tree, state, priors, length(models), args...)
 end
 
+# XXX: this is currently my main point of uncertainty
+# TODO: priors on mixture params (α)
+# TODO: ν at the cluster level?
 function logprior(tree::SpeciesTree, state::State, priors, K, args...)
     s = deepcopy(state)
-    !haskey(s, :ν) ? s[:ν] = -1. : nothing  # HACK to work with constant rates
     for (k, v) in args
         if haskey(s, k)
             typeof(v)<:Tuple ? s[k][v[1]] = v[2] : s[k] = v
@@ -80,29 +90,38 @@ function logprior(tree::SpeciesTree, state::State, priors, K, args...)
     for i=1:K
         θ = (Ψ=tree, ν=s[:ν], λ=s[Symbol("λ$i")],
             μ=s[Symbol("μ$i")], q=s[Symbol("q$i")], η=s[:η])
-        logπ += Beluga.logprior(priors, θ) + log(s[:w, i])
-        # XXX is this correct, should we include the weight?
+        logπ += Beluga.logprior(priors, θ)
     end
+    logπ += logpdf(Dirichlet(ones(K)), s[:w])   # FIXME weights hardcoded
     logπ
 end
 
-# NOTE: Profile should be different for mixture case; would be good if it
-# stored L matrices and likelihoods for all clusters, as well as the current
-# cluster assignment
 
-# NOTE: in the finite mixture case; we can parallelize the Gibbs sampler for
-# latent assignments easily; as there is conditional independence of the zᵢ
-# and z₋ᵢ given the weights
-
+# MCMC
+# ====
 function mcmc!(chain::MixtureChain, n; show_trace=true, show_every=10)
     display(sort(chain.state))
     for i=1:n
         move_latent_assignment!(chain)
         move_η!(chain)
+        move_ν!(chain)
         move_clusterparams!(chain)
         chain[:gen] % show_every == 0 ? display(sort(chain.state)) : nothing
         log_mcmc!(chain, stdout, show_trace, show_every)
     end
+end
+
+function move_ν!(chain)
+    prop = chain.proposals[:ν]
+    ν_, hr = prop(chain[:ν])
+    p_ = logprior(chain, :ν=>ν_)
+    mhr = p_ - chain[:logπ] + hr
+    if log(rand()) < mhr
+        chain[:logπ] = p_
+        chain[:ν] = ν_
+        prop.accepted += 1
+    end
+    consider_adaptation!(prop, chain[:gen])
 end
 
 function move_η!(chain)

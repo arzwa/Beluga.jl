@@ -7,6 +7,44 @@ s = SpeciesTree("$base/test/data/plants1.nw")
 df = CSV.read("$base/test/data/plants1-100.tsv", delim=",")
 deletecols!(df, :Orthogroup)
 
+# Mixtures
+# ========
+prior = Beluga.IIDRatesPrior(
+    Exponential(0.1),
+    MvLogNormal(log.([0.5, 0.5]), [.5 0.45 ; 0.45 .5]),
+    Beta(1,1),
+    Beta(8,2))
+
+prior = ConstantRatesPrior(
+    MvLogNormal(log.([0.5, 0.5]), [.5 0.45 ; 0.45 .5]),
+    Beta(1,1),
+    Beta(8,2))
+
+s = SpeciesTree("$base/test/data/plants1.nw")
+# Beluga.set_constantrates!(s)
+K = 6
+p, m = MixtureProfile(df, s, K)
+# init = init_finitemixture(prior, s, K, m)
+mchain = MixtureChain(p, prior, s, K, m)
+
+# move_latent_assignment!(mchain); display(mchain)
+# move_clusterparams!(mchain); display(mchain)
+mcmc!(mchain, 1000, show_every=2, show_trace=false)
+write("test-mixture-K$K.csv", mchain.trace)
+
+function plot_mix_cr(chain)
+    p1 = plot(chain.trace[:λ11])
+    for k=2:chain.K
+        plot!(chain.trace[Symbol("λ$(k)1")])
+    end
+    p2 = plot(chain.trace[:μ11])
+    for k=2:chain.K
+        plot!(chain.trace[Symbol("μ$(k)1")])
+    end
+    plot(p1, p2)
+end
+
+
 # # Mixture profile
 # # ===============
 # K = 4
@@ -21,28 +59,4 @@ deletecols!(df, :Orthogroup)
 # @test logpdf!(d[1], p, 1, -1) == logpdf!(d, p, -1)
 # logpdf_allother!(d[1], p, 1, -1)
 
-
-# Mixtures
-# ========
-prior = Beluga.IIDRatesPrior(
-    0.5,
-    MvLogNormal(log.([0.5, 0.5]), [.5 0.45 ; 0.45 .5]),
-    Beta(1,1),
-    Beta(8,2))
-
-prior = ConstantRatesPrior(
-    MvLogNormal(log.([0.5, 0.5]), [.5 0.45 ; 0.45 .5]),
-    Beta(1,1),
-    Beta(8,2))
-
-s = SpeciesTree("$base/test/data/plants1.nw")
-Beluga.set_constantrates!(s)
-K = 4
-p, m = MixtureProfile(df, s, K)
-# init = init_finitemixture(prior, s, K, m)
-mchain = MixtureChain(p, prior, s, K, m)
-
-# move_latent_assignment!(mchain); display(mchain)
-# move_clusterparams!(mchain); display(mchain)
-mcmc!(mchain, 10000, show_every=10, show_trace=false)
-write("test-mixture-K$K.csv", mchain.trace)
+Beluga.MixturePrior(prior, 1.)
