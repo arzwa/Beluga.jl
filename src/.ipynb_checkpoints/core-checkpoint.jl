@@ -47,7 +47,7 @@ function DuplicationLossWGD(tree::Ψ,
     c = CsurosMiklos(W, ϵ, mmax)
     d = DuplicationLossWGD{T,Ψ}(tree, λ, μ, q, η, c)
     get_ϵ!(d)
-    get_W!(d)
+    get_W!(d, mmax)
     return d
 end
 
@@ -75,7 +75,7 @@ function Base.setindex!(d::DuplicationLossWGD{T,Ψ}, v::T, s::Symbol,
     getfield(d, s)[idx] = v
     bs = d.tree.pbranches[i]
     get_ϵ!(d, bs)
-    get_W!(d, bs)
+    get_W!(d, d.value.m, bs)
 end
 
 # vector based constructor (to core.jl?)
@@ -184,7 +184,8 @@ end
 # W matrix for Csuros & Miklos algorithm
 get_W!(d::DuplicationLossWGD, mmax::Int64) = get_W!(d, mmax, d.tree.order)
 
-function get_W!(model::DuplicationLossWGD, branches::Vector{Int64})
+function get_W!(model::DuplicationLossWGD, mmax::Int64,
+        branches::Vector{Int64})
     # XXX↓ WGD affects branch *below* a WGD!
     @unpack tree, λ, μ, q, η, value = model
     @unpack W, ϵ, m = value
