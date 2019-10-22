@@ -182,7 +182,7 @@ end
 # transition probabiities
 # =======================
 # W matrix for Csuros & Miklos algorithm
-get_W!(d::DuplicationLossWGD, mmax::Int64) = get_W!(d, mmax, d.tree.order)
+get_W!(d::DuplicationLossWGD) = get_W!(d, d.tree.order)
 
 function get_W!(model::DuplicationLossWGD, branches::Vector{Int64})
     # XXX↓ WGD affects branch *below* a WGD!
