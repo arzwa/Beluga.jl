@@ -50,6 +50,7 @@ function move_X!(chain, k)
     m = chain.models[k]
     X = chain[s]
     for node in t.order
+        bs = get_pbranches(t, node)
         prop = rand(proposals[node])  # pick a random proposal
         m_, X_, hr = move!(deepcopy(X), deepcopy(m), node, prop)
         p_ = logprior(chain, s=>X_)
@@ -72,6 +73,9 @@ function move!(X, model, node, prop)
     X, model, hr
 end
 
+
+# utilities
+# =========
 # update the model *branch rates* when a *node* state has changed
 function update_model!(model, θ, node)
     bs = get_affected_branches(model.tree, node)
@@ -80,8 +84,14 @@ function update_model!(model, θ, node)
     end
 end
 
-get_affected_branches(tree, node) =
-    !isleaf(t, node) ? [node ; childnodes(tree, node)] : [node]
+# NOTE: when node states change, the partial recomputation should start from
+# the children, as the rates on these branches are affected by a node state
+# change!
+get_affected_branches(tree, node) = !isleaf(t, node) ?
+    [childnodes(tree, node) ; node] : [node]
+
+get_pbranches(tree, node) = !isleaf(t, node) ?
+    [childnodes(tree, node); tree.pbranches[node]] : tree.pbranches[node]
 
 function update_rates!(model, r, i)
     model[:λ, i] = r[i, 1]
@@ -91,7 +101,7 @@ end
 
 
 
-using Beluga, Parameters, Distributions
+using Beluga, Parameters, Distributions, PhyloTrees
 import Beluga.Prior
 t, x = Beluga.example_data1()
 
