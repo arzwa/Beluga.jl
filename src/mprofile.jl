@@ -19,6 +19,9 @@ MixtureProfile(T::Type, x::Vector{Int64}, n::Int64, K::Int64, m=maximum(x)) =
         [minfs(T, n, m+1) for i=1:K],
         zeros(K), zeros(K), Int64[rand(1:K)])
 
+MixtureProfile(K, N) = distribute(
+    MixtureProfile[MixtureProfile(Float64, Int64[], 0, K, -1) for i=1:N])
+
 function MixtureProfile(df::DataFrame, tree::Arboreal, K::Int64)
     X = profile(tree, df)
     N, n = size(X)
@@ -42,29 +45,25 @@ Base.setproperty!(p::MixtureProfile, x::Symbol, v) =
 # ===============
 # These are required for the MCMC algorithm for finite mixtures
 # compute logpdf, assuming only component k changed
-function logpdf!(d::PhyloBDP, p::MPArray, k::Int64, i::Int64)
+function logpdf!(d::PhyloBDP, p::MPArray, k::Int64, bs::Vector{Int64})
     if length(p[1].x) == 0. ; return 0.; end  # HACK
-    branches = i == -1 ? d.tree.order : d.tree.pbranches[i]
-    mapreduce((x)-> x.z == k ? logpdf!(d, x, k, branches) : x.l[x.z], +, p)
+    mapreduce((x)-> x.z == k ? logpdf!(d, x, k, bs) : x.l[x.z], +, p)
 end
 
 # compute logpdf for all families for their assignments
-function logpdf!(d::Array{<:PhyloBDP,1}, p::MPArray, i::Int64)
+function logpdf!(d::Array{<:PhyloBDP,1}, p::MPArray, bs::Vector{Int64})
     if length(p[1].x) == 0. ; return 0.; end  # HACK
-    branches = i == -1 ? d[1].tree.order : d[1].tree.pbranches[i]
-    mapreduce((x)-> logpdf!(d[x.z], x, x.z, branches), +, p)
+    mapreduce((x)-> logpdf!(d[x.z], x, x.z, bs), +, p)
 end
 
 # compute logpdfs for cluster k for all families not assigned to k
-function logpdf_allother!(d::PhyloBDP, p::MPArray, k::Int64, i::Int64)
+function logpdf_allother!(d::PhyloBDP, p::MPArray, k::Int64, bs::Vector{Int64})
     if length(p[1].x) == 0. ; return 0.; end  # HACK
-    branches = i == -1 ? d.tree.order : d.tree.pbranches[i]
-    mapreduce((x)-> x.z == k ? x.l[k] : logpdf!(d, x, k, branches), +, p)
+    mapreduce((x)-> x.z == k ? x.l[k] : logpdf!(d, x, k, bs), +, p)
 end
 
-function logpdf!(d::PhyloBDP, x::MixtureProfile, k::Int64,
-        branches::Array{Int64})
-    l = Distributions.logpdf!(x.Ltmp[k], d, x.x, branches)
+function logpdf!(d::PhyloBDP, x::MixtureProfile, k::Int64, bs::Array{Int64})
+    l = Distributions.logpdf!(x.Ltmp[k], d, x.x, bs)
     x.ltmp[k] = l
     l
 end

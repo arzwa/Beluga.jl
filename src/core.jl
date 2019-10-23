@@ -173,7 +173,7 @@ function get_ϵ!(model::DuplicationLossWGD, branches::Vector{Int64})
         end
     end
     if any(ϵ .> 0.)
-        @error "Some non-valid extinction probabilities\n$(display(ϵ)), $λ, $μ"
+        @error "Some non-valid extinction probabilities\n, $λ, $μ"
         ϵ[ϵ .> 0.] .= 0.
     end
 end
@@ -188,6 +188,7 @@ function get_W!(model::DuplicationLossWGD, branches::Vector{Int64})
     # XXX↓ WGD affects branch *below* a WGD!
     @unpack tree, λ, μ, q, η, value = model
     @unpack W, ϵ, m = value
+    m == 0 ? (return) : nothing  # HACK when sampling from prior
     for i in branches[1:end-1]  # excluding root node
         μi = model[:μ, i]
         λi = model[:λ, i]

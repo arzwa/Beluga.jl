@@ -40,7 +40,8 @@ function MixtureChain(X::MPArray, prior::RatesPrior, tree::SpeciesTree,
     mchain
 end
 
-function init_finitemixture(prior, tree, K, m)
+function init_finitemixture(prior, tree, K, m)    @show models
+
     init = rand(prior, tree)
     !haskey(init, :ν) ? s[:ν] = -1. : nothing  # HACK to work with const rates
     init[:gen] = 0; init[:logπ] = 0

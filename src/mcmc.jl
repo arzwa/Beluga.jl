@@ -3,7 +3,7 @@
 # would be nice (idem for the SpeciesTree & SlicedTree)
 
 abstract type Chain end
-const State = Dict{Symbol,Union{Vector{Float64},Float64,Int64}}
+const State = Dict{Symbol,Union{Vector{Float64},Matrix{Float64},Float64,Int64}}
 Base.getindex(state::State, s::Symbol, i::Int64) = state[s][i]
 Base.setindex!(state::State, x, s::Symbol, i::Int64) = state[s][i] = x
 
