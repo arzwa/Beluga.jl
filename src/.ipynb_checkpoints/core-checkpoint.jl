@@ -5,8 +5,6 @@
 # Poisson, Negbinomial and geometric
 # NOTE: only conditioning on one in both clades currently
 # TODO: implement gain (~ Csuros & Miklos) as well
-# TODO: implement (parallel) gradient
-# NOTE: as of 25/09/2019, everything is on log-scale
 
 # helper struct for the Csuros & Miklos algorithm
 mutable struct CsurosMiklos{T<:Real}
@@ -47,7 +45,7 @@ function DuplicationLossWGD(tree::Ψ,
     c = CsurosMiklos(W, ϵ, mmax)
     d = DuplicationLossWGD{T,Ψ}(tree, λ, μ, q, η, c)
     get_ϵ!(d)
-    get_W!(d, mmax)
+    get_W!(d)
     return d
 end
 
@@ -75,7 +73,7 @@ function Base.setindex!(d::DuplicationLossWGD{T,Ψ}, v::T, s::Symbol,
     getfield(d, s)[idx] = v
     bs = d.tree.pbranches[i]
     get_ϵ!(d, bs)
-    get_W!(d, d.value.m, bs)
+    get_W!(d, bs)
 end
 
 # vector based constructor (to core.jl?)
@@ -173,7 +171,7 @@ function get_ϵ!(model::DuplicationLossWGD, branches::Vector{Int64})
         end
     end
     if any(ϵ .> 0.)
-        @error "Some non-valid extinction probabilities\n$(display(ϵ)), $λ, $μ"
+        @error "Some non-valid extinction probabilities\n, $λ, $μ"
         ϵ[ϵ .> 0.] .= 0.
     end
 end
@@ -182,13 +180,13 @@ end
 # transition probabiities
 # =======================
 # W matrix for Csuros & Miklos algorithm
-get_W!(d::DuplicationLossWGD, mmax::Int64) = get_W!(d, mmax, d.tree.order)
+get_W!(d::DuplicationLossWGD) = get_W!(d, d.tree.order)
 
-function get_W!(model::DuplicationLossWGD, mmax::Int64,
-        branches::Vector{Int64})
+function get_W!(model::DuplicationLossWGD, branches::Vector{Int64})
     # XXX↓ WGD affects branch *below* a WGD!
     @unpack tree, λ, μ, q, η, value = model
     @unpack W, ϵ, m = value
+    m == 0 ? (return) : nothing  # HACK when sampling from prior
     for i in branches[1:end-1]  # excluding root node
         μi = model[:μ, i]
         λi = model[:λ, i]
@@ -205,53 +203,53 @@ end
 
 function _wstar(t, λ, μ, ϵ, mmax::Int64)
     # compute w* (Csuros Miklos 2009)
-    # ϕ = getϕ(t, λ, μ)  # p
-    # ψ = getψ(t, λ, μ)  # q
-    # _n = 1. - ψ*ϵ
-    # ϕp = (ϕ*(1. - ϵ) + (1. - ψ)*ϵ) / _n
-    # ψp = ψ*(1. - ϵ) / _n
-    # w[1,1] = 1.
-    # w = zeros(typeof(λ), mmax+1, mmax+1)
-    ϕ = log(getϕ(t, λ, μ))  # p
-    ψ = log(getψ(t, λ, μ))  # q
-    _n = log1mexp(ψ+ϵ)
-    ϕp = logaddexp(ϕ+log1mexp(ϵ), log1mexp(ψ)+ϵ) - _n
-    ψp = ψ+log1mexp(ϵ) - _n
-    w = minfs(typeof(λ), mmax+1, mmax+1)
-    w[1,1] = 0.
+    ϕ = getϕ(t, λ, μ)  # p
+    ψ = getψ(t, λ, μ)  # q
+    _n = 1. - ψ*ϵ
+    ϕp = (ϕ*(1. - ϵ) + (1. - ψ)*ϵ) / _n
+    ψp = ψ*(1. - ϵ) / _n
+    w = zeros(typeof(λ), mmax+1, mmax+1)
+    w[1,1] = 1.
+#     ϕ = log(getϕ(t, λ, μ))  # p
+#     ψ = log(getψ(t, λ, μ))  # q
+#     _n = log1mexp(ψ+ϵ)
+#     ϕp = logaddexp(ϕ+log1mexp(ϵ), log1mexp(ψ)+ϵ) - _n
+#     ψp = ψ+log1mexp(ϵ) - _n
+#     w = minfs(typeof(λ), mmax+1, mmax+1)
+#     w[1,1] = 0.
     for m=1:mmax, n=1:m
-        # w[n+1, m+1] = ψp*w[n+1, m] + (1. - ϕp)*(1. - ψp)*w[n, m]
-        w[n+1, m+1] = logaddexp(ψp + w[n+1, m],
-            log1mexp(ϕp) + log1mexp(ψp) + w[n, m])
+        w[n+1, m+1] = ψp*w[n+1, m] + (1. - ϕp)*(1. - ψp)*w[n, m]
+#         w[n+1, m+1] = logaddexp(ψp + w[n+1, m],
+#             log1mexp(ϕp) + log1mexp(ψp) + w[n, m])
     end
-    return w
+    return log.(w)
 end
 
 function _wstar_wgd(t, λ, μ, q, ϵ, mmax::Int64)
     # compute w* (Csuros Miklos 2009)
-    # ϕ = getϕ(t, λ, μ)  # p
-    # ψ = getψ(t, λ, μ)  # q
-    # _n = 1. - ψ*ϵ
-    # ϕp = (ϕ*(1. - ϵ) + (1. - ψ)*ϵ) / _n
-    # ψp = ψ*(1. - ϵ) / _n
-    # w = zeros(typeof(λ), mmax+1, mmax+1)
-    # w[1,1] = 1.
-    # w[2,2] = ((1. - q) + 2q*ϵ)*(1. - ϵ)
-    # w[2,3] = q*(1. - ϵ)^2
-    ϕ = log(getϕ(t, λ, μ))  # p
-    ψ = log(getψ(t, λ, μ))  # q
-    _n = log1mexp(ψ+ϵ)
-    ϕp = logaddexp(ϕ+log1mexp(ϵ), log1mexp(ψ)+ϵ) - _n
-    ψp = ψ+log1mexp(ϵ) - _n
-    w = minfs(typeof(λ), mmax+1, mmax+1)
-    w[1,1] = 0.
-    w[2,2] = logaddexp(log(1. - q), log(2q)+ϵ) + log1mexp(ϵ)
-    w[2,3] = log(q) + 2*log1mexp(ϵ)
+    ϕ = getϕ(t, λ, μ)  # p
+    ψ = getψ(t, λ, μ)  # q
+    _n = 1. - ψ*ϵ
+    ϕp = (ϕ*(1. - ϵ) + (1. - ψ)*ϵ) / _n
+    ψp = ψ*(1. - ϵ) / _n
+    w = zeros(typeof(λ), mmax+1, mmax+1)
+    w[1,1] = 1.
+    w[2,2] = ((1. - q) + 2q*ϵ)*(1. - ϵ)
+    w[2,3] = q*(1. - ϵ)^2
+#     ϕ = log(getϕ(t, λ, μ))  # p
+#     ψ = log(getψ(t, λ, μ))  # q
+#     _n = log1mexp(ψ+ϵ)
+#     ϕp = logaddexp(ϕ+log1mexp(ϵ), log1mexp(ψ)+ϵ) - _n
+#     ψp = ψ+log1mexp(ϵ) - _n
+#     w = minfs(typeof(λ), mmax+1, mmax+1)
+#     w[1,1] = 0.
+#     w[2,2] = logaddexp(log(1. - q), log(2q)+ϵ) + log1mexp(ϵ)
+#     w[2,3] = log(q) + 2*log1mexp(ϵ)
     for i=1:mmax, j=2:mmax
-        # w[i+1, j+1] =  w[2,2]*w[i, j] + w[2,3]*w[i, j-1]
-        w[i+1, j+1] = logaddexp(w[2,2] + w[i, j], w[2,3] + w[i, j-1])
+        w[i+1, j+1] =  w[2,2]*w[i, j] + w[2,3]*w[i, j-1]
+        # w[i+1, j+1] = logaddexp(w[2,2] + w[i, j], w[2,3] + w[i, j-1])
     end
-    return w
+    return log.(w)
 end
 
 
@@ -302,9 +300,10 @@ getξ(i, j, k, t, λ, μ) = binomial(i, k)*binomial(i+j-k-1,i-1)*
     getϕ(t, λ, μ)^(i-k)*getψ(t, λ, μ)^(j-k)*(1-getϕ(t, λ, μ)-getψ(t, λ, μ))^k
 tp(a, b, t, λ, μ) = (a == b == 0) ? 1.0 :
     sum([getξ(a, b, k, t, λ, μ) for k=0:min(a,b)])
+# NOTE: when μ >> λ, numerical issues sometimes result in p > 1.   
 ep(λ, μ, t, ε) = λ ≈ μ ? 1. + (1. - ε)/(μ * (ε - 1.) * t - 1.) :
-    (μ + (λ - μ)/(1. + exp((λ - μ)*t)*λ*(ε - 1.)/(μ - λ*ε)))/λ
-
+    approx1((μ + (λ - μ)/(1. + exp((λ - μ)*t)*λ*(ε - 1.)/(μ - λ*ε)))/λ)
+approx1(x) = x ≈ one(x) ? one(x) : x
 
 # The Csuros & Miklos algorithm
 # =============================
@@ -372,7 +371,7 @@ function csuros_miklos!(L::Matrix{T},
                         else
                             # p = _ϵ[i]
                             p = exp(_ϵ[i])
-                            if !(zero(p) < p < one(p))
+                            if !(zero(p) <= p <= one(p))
                                 @error "Invalid extinction probability ($p)"
                                 p = one(p)
                             end
