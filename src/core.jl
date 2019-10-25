@@ -120,7 +120,7 @@ function logpdf!(L::Matrix{T},
 end
 
 function infornan(l)
-    if isinf(l) || isnan(l)
+    if l == Inf || isnan(l)
         @warn "loglikelihood = $l, returning -Inf"
         return -Inf
     else
