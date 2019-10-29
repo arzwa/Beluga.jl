@@ -33,11 +33,3 @@ function bounds(d::DuplicationLossWGD)
 end
 
 Base.length(d::DuplicationLossWGD) = length(asvector(d))
-
-#=function f(x::Vector)  # using KissThreading
-    w = WhaleModel(t, x)
-    v0 = -logpdf(w, ccd[1])
-    return @views tmapreduce(+, ccd[2:end], init=v0) do c
-        -logpdf(w, c)
-    end
-end=#

@@ -69,7 +69,7 @@ leafname(d::PhyloLinearBDP, i::Int64) = leafname(d.tree, i)
 
 # WGD stuff
 # =========
-# NB: Wgd is assumed to be defined by having a q entry in the branch index!
+# NB: wgd is assumed to be defined by having a q entry in the branch index!
 iswgd(Ψ::SpeciesTree, i::Int64) = haskey(Ψ.bindex[i], :q)
 iswgdafter(Ψ::SpeciesTree, i::Int64) = isroot(Ψ.tree, i) ?
     false : haskey(Ψ.bindex[parentnode(Ψ, i)], :q)
@@ -112,8 +112,14 @@ hasconstantrates(Ψ::SpeciesTree, s=:θ) =
 
 nrates(Ψ::SpeciesTree, s=:θ) = length(unique([v[:θ] for (k,v) in Ψ.bindex]))
 
-function addwgd!(Ψ::SpeciesTree, lca, t, i)
+function addwgd!(Ψ::SpeciesTree, lca::Vector, t::Number)
+    i = nwgd(Ψ) + 1
     n = lca_node(Ψ.tree, Set([k for (k,v) in Ψ.leaves if v in lca]))
+    addwgd!(Ψ, n, t, i)
+end
+
+# n is a branch id, which is the node at the end of a branch between to splits
+function addwgd!(Ψ::SpeciesTree, n::Int64, t, i)
     while leafdist(Ψ, parentnode(Ψ, n)) < t
         n = parentnode(Ψ, n)
     end
@@ -126,6 +132,7 @@ function addwgd!(Ψ::SpeciesTree, lca, t, i)
     Ψ.bindex[wgdnode] = Dict(:q=>i, :θ=>Ψ[n, :θ])
     Ψ.bindex[wgdafter] = Dict(:θ=>Ψ[n, :θ])
     set_parentbranches!(Ψ)
+    wgdnode, wgdafter
 end
 
 
