@@ -115,20 +115,21 @@ nrates(Ψ::SpeciesTree, s=:θ) = length(unique([v[:θ] for (k,v) in Ψ.bindex]))
 function addwgd!(Ψ::SpeciesTree, lca::Vector, t::Number)
     i = nwgd(Ψ) + 1
     n = lca_node(Ψ.tree, Set([k for (k,v) in Ψ.leaves if v in lca]))
-    addwgd!(Ψ, n, t, i)
-end
-
-# n is a branch id, which is the node at the end of a branch between to splits
-function addwgd!(Ψ::SpeciesTree, n::Int64, t, i)
     while leafdist(Ψ, parentnode(Ψ, n)) < t
         n = parentnode(Ψ, n)
     end
     tn = leafdist(Ψ, n)
     tbefore = t - tn
+    addwgd!(Ψ, n, tbefore, i)
+end
+
+# n is a branch id, which is the node at the end of a branch between to splits
+# here t is the time before n where the WGD has to be inserted
+function addwgd!(Ψ::SpeciesTree, n::Int64, tbefore, i)
     wgdafter = insert_node!(Ψ.tree, n, tbefore)
     wgdnode = insert_node!(Ψ.tree, wgdafter, 0.)
     Ψ.order = postorder(Ψ)
-    @info "Added WGD node $wgdnode and 'after' node $wgdafter"
+    #@info "Added WGD node $wgdnode and 'after' node $wgdafter"
     Ψ.bindex[wgdnode] = Dict(:q=>i, :θ=>Ψ[n, :θ])
     Ψ.bindex[wgdafter] = Dict(:θ=>Ψ[n, :θ])
     set_parentbranches!(Ψ)
