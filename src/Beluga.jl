@@ -22,7 +22,6 @@ module Beluga
     include("mle.jl")
     include("sim.jl")
     include("mprofile.jl")
-    include("rjutils.jl")
 
     export
         SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,

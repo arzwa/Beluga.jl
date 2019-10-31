@@ -34,6 +34,7 @@ mutable struct SpeciesTree <: Arboreal
     bindex::BranchIndex
     pbranches::Dict{Int64,Array{Int64}}  # branches
     order::Array{Int64,1}
+    wgds::Set{Int64}
 end
 
 function SpeciesTree(tree::Tree, leaves::Dict{Int64,T}) where
@@ -42,7 +43,8 @@ function SpeciesTree(tree::Tree, leaves::Dict{Int64,T}) where
             Dict(k=>Symbol(v) for (k,v) in leaves),
             defaultidx(tree),
             Dict{Int64,Array{Int64}}(),
-            postorder(tree))
+            postorder(tree),
+            Set{Int64}())
     set_parentbranches!(s)
     return s
 end
@@ -133,6 +135,7 @@ function addwgd!(Ψ::SpeciesTree, n::Int64, tbefore, i)
     Ψ.bindex[wgdnode] = Dict(:q=>i, :θ=>Ψ[n, :θ])
     Ψ.bindex[wgdafter] = Dict(:θ=>Ψ[n, :θ])
     set_parentbranches!(Ψ)
+    push!(Ψ.wgds, wgdnode)
     wgdnode, wgdafter
 end
 
