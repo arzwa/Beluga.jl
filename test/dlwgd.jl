@@ -12,6 +12,7 @@ d2 = DuplicationLossWGD(t, λ .+ 0.3, μ .+ 0.2, [0.2], 1/1.5, maximum(x))
     e = findroot(d1.tree)
     f, g = childnodes(d1.tree, e)
     ϵ = exp.(d1.value.ϵ)
+    @show ϵ
     @test ϵ[e, 2] ≈ 0.778372527869781
     @test ϵ[f, 1] ≈ 0.938284827880156
     @test ϵ[g, 1] ≈ 0.829569555790793
