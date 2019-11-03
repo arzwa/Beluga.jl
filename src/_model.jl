@@ -1,14 +1,7 @@
-#= alternative, but I don't like the dict ======================================
-it seems promising
-challenge remains to get the two-node WGD representation to a single node...
-once that works do we have everything?
-TODO: wgds, root integration, conditioning, io from data frame, tree struct
-===============================================================================#
-using PhyloTree
-using Parameters, StatsFuns, Distributions, DataFrames, CSV
-import Beluga: ep, getϕ, getψ, approx1, minfs
-import Distributions: logpdf, logpdf!
-
+# NOTE:
+# * changed dimensions of L matrix (m × # nodes)
+# * should evaluate numerical accurracy in some way
+# * would prefer to have more tests
 
 # BelugaNode/ModelNode
 # ====================
@@ -23,6 +16,7 @@ const ModelNode{T} = TreeNode{BelugaNode{T}} where T
 
 Base.setindex!(n::ModelNode{T}, v::T, s::Symbol) where T = n.x.θ[s] = v
 Base.getindex(n::ModelNode, s::Symbol) = n.x.θ[s]
+
 iswgd(n::ModelNode) = n.x.kind == :wgd
 iswgdafter(n::ModelNode) = n.x.kind == :wgdafter
 isawgd(n::ModelNode) = iswgd(n) || iswgdafter(n)
@@ -30,7 +24,7 @@ gete(n::ModelNode, i::Int64) = n.x.ϵ[i]
 getw(n::ModelNode, i::Int64, j::Int64) = n.x.W[i,j]
 
 function update!(n::ModelNode{T}, θ::Symbol, v::T) where T<:Real
-    n[:θ] = v
+    n[θ] = v
     setbelow!(n)
     setabove!(n)
 end
@@ -81,30 +75,42 @@ Base.show(io::IO, d::DLWGD{T}) where T = write(io, "DLWGD{$T}($(length(d)))")
 Base.length(d::DLWGD) = length(d.nodes)
 Base.getindex(d::DLWGD, i::Int64) = d.nodes[i]
 Base.getindex(d::DLWGD, i::Int64, s::Symbol) = d.nodes[i][s]
-getl(d::DLWGD, i::Int64) = d.leaves[i]
 
 function DuplicationLossWGDModel(nw::String, df::DataFrame, λ=1., μ=1., η=0.9)
     @unpack t, l = readnw(nw)
     M, m = profile(t, l, df)
     nodes, leaves = inittree(t, l, η, λ, μ, m)
     d = DuplicationLossWGDModel(nodes, leaves)
-    initmodel!(d[1])
+    set!(d)
     d, M
 end
 
-function logpdf(d::DLWGD, x::AbstractVector{Int64})
+function logpdf(d::DLWGD, x::Vector{Int64})
     L = csuros_miklos(x, d[1])
-    l = integrate_root(L[1,:], d[1])
-    l -= condition_oib(d[1])
+    l = integrate_root(L[:,1], d[1])
+    l -= condition_oib(d[1])  #XXX sometimes -Inf-(-Inf) = NaN
+    isnan(l) ? -Inf : l
 end
 
-function logpdf!(L::Matrix{T}, x::AbstractVector{Int64}, n::ModelNode{T}) where T<:Real
-    while !isnothing(n)
+function logpdf!(L::Matrix{T}, x::Vector{Int64}, d::DLWGD{T}) where T<:Real
+    for n in postwalk(d[1])
+        csuros_miklos!(L, x, n)
+    end
+    l = integrate_root(L[:,1], d[1])
+    l -= condition_oib(d[1])  #XXX sometimes -Inf-(-Inf) = NaN
+    isnan(l) ? -Inf : l
+end
+
+# recompute from `n` upward
+function logpdf!(L::Matrix{T}, x::Vector{Int64}, n::ModelNode{T}) where T<:Real
+    while !isroot(n)
         csuros_miklos!(L, x, n)
         n = n.p
     end
-    l = integrate_root(L[1,:], d[1])
-    l -= condition_oib(d[1])
+    csuros_miklos!(L, x, n)
+    l = integrate_root(L[:,1], n)
+    l -= condition_oib(n)
+    isnan(l) ? -Inf : l
 end
 
 function profile(t::TreeNode, l::Dict, df::DataFrame)
@@ -113,7 +119,7 @@ function profile(t::TreeNode, l::Dict, df::DataFrame)
     for n in nodes
         M[:,n.i] = isleaf(n) ? df[:,Symbol(l[n.i])] : sum([M[:,c.i] for c in n.c])
     end
-    return M, maximum(M)+1
+    return permutedims(M), maximum(M)+1
 end
 
 function insertwgd!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
@@ -134,6 +140,32 @@ function insertwgd!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
     d.nodes[i] = n1
     d.nodes[i+1] = n2
     setabove!(n)
+    return n1
+end
+
+function removewgd!(d::DLWGD, n::ModelNode)
+    if !iswgd(n)
+        throw(ArgumentError("Not a WGD node $i"))
+    end
+    parent = n.p
+    child = first(first(n))
+    delete!(parent, n)
+    push!(parent, child)
+    child.p = parent
+    child[:t] += n[:t]
+    delete!(d.nodes, n.i)
+    delete!(d.nodes, n.i+1)
+    reindex!(d, n.i+2)
+    setabove!(child)
+    return child
+end
+
+function reindex!(d::DLWGD, i::Int64)
+    for j=i:maximum(keys(d.nodes))
+        d.nodes[j-2] = d.nodes[j]
+        d[j-2].i = j-2
+        delete!(d.nodes, j)
+    end
 end
 
 function inittree(t::TreeNode, l, η::T, λ::T, μ::T, m) where T<:Real
@@ -153,8 +185,8 @@ function inittree(t::TreeNode, l, η::T, λ::T, μ::T, m) where T<:Real
     return d, n
 end
 
-function initmodel!(t::ModelNode)
-    for n in postwalk(t)
+function set!(d::DLWGD)
+    for n in postwalk(d[1])
         set!(n)
     end
 end
@@ -242,19 +274,22 @@ function getλμ(a, b)
 end
 
 function csuros_miklos(x, node::ModelNode{T}) where T<:Real
-    L = minfs(T, length(x), maximum(x)+1)
+    L = minfs(T, maximum(x)+1, length(x))
     for n in postwalk(node)
         csuros_miklos!(L, x, n)
     end
     L
 end
 
-function csuros_miklos!(L::Matrix{T}, x::AbstractVector{Int64},
+function csuros_miklos!(L::Matrix{T}, x::Vector{Int64},
         node::ModelNode{T}) where T<:Real
+    # NOTE: possible optimizations:
+    #  - column-major based access B, W, (L ✓)
+    #  - matrix operations instead of some loops ~ WGDgc
     @unpack W, ϵ = node.x
     mx = maximum(x)
     if isleaf(node)
-        L[node.i, x[node.i]+1] = 0.
+        L[x[node.i]+1, node.i] = 0.
     else
         children = [c for c in node.c]
         Mc = [x[c.i] for c in children]
@@ -267,7 +302,7 @@ function csuros_miklos!(L::Matrix{T}, x::AbstractVector{Int64},
             Mi = Mc[i]
 
             Wc = c.x.W[1:mx+1, 1:mx+1]
-            B[i, 1, :] = log.(Wc * exp.(L[c.i, 1:mx+1]))
+            B[i, 1, :] = log.(Wc * exp.(L[1:mx+1, c.i]))
 
             for t=1:_M[i], s=0:Mi  # this is 0...M[i-1] & 0...Mi
                 B[i,t+1,s+1] = s == Mi ? B[i,t,s+1] + log(gete(c, 1)) :
@@ -300,7 +335,7 @@ function csuros_miklos!(L::Matrix{T}, x::AbstractVector{Int64},
             end
         end
         for n=0:x[node.i]
-            L[node.i, n+1] = A[end, n+1]
+            L[n+1, node.i] = A[end, n+1]
         end
     end
 end
@@ -327,7 +362,3 @@ function condition_oib(n::ModelNode{T}) where T<:Real
         return log1mexp(lr[1]) + log1mexp(lr[2])
     end
 end
-
-#geometric_extinctionp(ϵ::T, η::T) where T<:Real = η*ϵ/(1. - (1. - η)*ϵ)
-geometric_extinctionp(ϵ::Real, η::Real)=geometric_extinctionp(promote(ϵ, η)...)
-geometric_extinctionp(ϵ::T, η::T) where T<:Real = η + ϵ -log1mexp(log1mexp(η)+ϵ)

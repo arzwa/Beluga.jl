@@ -1,32 +1,17 @@
 module Beluga
-
-    # using AdaptiveMCMC
-    using DataFrames
-    using Distributed
-    using DistributedArrays
-    using Distributions
+    using PhyloTree
     using Parameters
-    using PhyloTrees
-    using StatsBase
-    using ForwardDiff
-    using Optim
-    using CSV
-    # using MCMCChains
-    import StatsFuns: logaddexp, log1mexp, log1pexp
-    import Distributions: logpdf!, logpdf
+    using StatsFuns
+    using Distributions
+    using DataFrames
 
-    include("speciestree.jl")
-    include("core.jl")
-    include("profile.jl")
-    include("gradient.jl")
-    include("mle.jl")
-    include("sim.jl")
-    include("mprofile.jl")
+    import Distributions: logpdf, logpdf!
 
-    export
-        SpeciesTree, profile, PhyloBDP, DuplicationLoss, DuplicationLossWGD,
-        logpdf, logpdf!, Profile, PArray, rev!, set!,  nrates, nwgd,
-        gradient, mle, addwgd!, AbstractProfile, MixtureProfile, MPArray
+    include("_utils.jl")
+    include("_model.jl")
+    include("_profile.jl")
 
-        # GBM, mcmc!, DLChain, GBMRatesPrior, LogUniform, ConstantRatesPrior, NhRatesPrior, IIDRatesPrior, MixtureChain, MixtureProfile
+    export DuplicationLossWGDModel, DLWGD, logpdf, logpdf!, update!
+    export insertwgd!, removewgd!
+    export Profile, PArray
 end
