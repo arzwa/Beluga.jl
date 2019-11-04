@@ -5,6 +5,7 @@
 
 # BelugaNode/ModelNode
 # ====================
+# would we lose efficiency if we use θ::Dict{Symbol,Union{T,Vector{T}}}?
 @with_kw mutable struct BelugaNode{T}
     θ::Dict{Symbol,T}          # parameter vector (λ, μ, q, η, [κ])
     ϵ::Vector{T} = ones(T, 2)  # extinction probabilities
@@ -16,10 +17,12 @@ const ModelNode{T} = TreeNode{BelugaNode{T}} where T
 
 Base.setindex!(n::ModelNode{T}, v::T, s::Symbol) where T = n.x.θ[s] = v
 Base.getindex(n::ModelNode, s::Symbol) = n.x.θ[s]
+Base.getindex(n::ModelNode, args::Symbol...) = [n.x.θ[s] for s in args]
 
 iswgd(n::ModelNode) = n.x.kind == :wgd
 iswgdafter(n::ModelNode) = n.x.kind == :wgdafter
 isawgd(n::ModelNode) = iswgd(n) || iswgdafter(n)
+issp(n::ModelNode) = n.x.kind == :sp
 gete(n::ModelNode, i::Int64) = n.x.ϵ[i]
 getw(n::ModelNode, i::Int64, j::Int64) = n.x.W[i,j]
 
@@ -108,6 +111,13 @@ function logpdf!(L::Matrix{T}, x::Vector{Int64}, n::ModelNode{T}) where T<:Real
         n = n.p
     end
     csuros_miklos!(L, x, n)
+    l = integrate_root(L[:,1], n)
+    l -= condition_oib(n)
+    isnan(l) ? -Inf : l
+end
+
+# when only η has changed at the root, it is wasteful to do `csuros_miklos!`
+function logpdfroot(L::Matrix{T}, n::ModelNode{T}) where T<:Real
     l = integrate_root(L[:,1], n)
     l -= condition_oib(n)
     isnan(l) ? -Inf : l
@@ -223,9 +233,10 @@ function setϵ!(n::ModelNode{T}) where T<:Real
         for c in n.c
             c.x.ϵ[1] = one(T)
             λ, μ = getλμ(n, c)
-            c.x.ϵ[1] = ep(λ, μ, c[:t], gete(c, 2))
+            c.x.ϵ[1] = approx1(ep(λ, μ, c[:t], gete(c, 2)))
             n.x.ϵ[2] *= c.x.ϵ[1]
         end
+        n.x.ϵ[2] = approx1(n.x.ϵ[2])
     end
 end
 
@@ -233,7 +244,7 @@ function setW!(n::ModelNode{T}) where T<:Real
     if isroot(n)
         return
     end
-    λ, μ = getλμ(n, n.p)
+    λ, μ = getλμ(n.p, n)
     ϵ = gete(n, 2)
     if iswgdafter(n)
         q = n.p[:q]
@@ -241,6 +252,24 @@ function setW!(n::ModelNode{T}) where T<:Real
     else
         wstar!(n.x.W, n[:t], λ, μ, ϵ)
     end
+end
+
+function getλμ(a, b)
+    a = isawgd(a) ? nonwgdparent(a) : a
+    b = isawgd(b) ? nonwgdchild(b)  : b
+    # 0.5*(a[:λ, :μ] .+ b[:λ, :μ]) below is faster
+    [(a[:λ]+b[:λ])/2., (a[:μ]+b[:μ])/2.]
+end
+
+function branchrates(d::DLWGD)
+    r = zeros(2, length(d))
+    r[:,1] = d[1][:λ, :μ]
+    for (i,n) in d.nodes
+        if issp(n)
+            r[:, i] = getλμ(n.p, n)
+        end
+    end
+    r
 end
 
 function wstar!(w, t, λ, μ, ϵ)
@@ -267,12 +296,6 @@ function wstar_wgd!(w, t, λ, μ, q, ϵ)
     end
 end
 
-function getλμ(a, b)
-    a = isawgd(a) ? nonwgdparent(a) : a
-    b = isawgd(b) ? nonwgdchild(b)  : b
-    [(a[:λ]+b[:λ])/2., (a[:μ]+b[:μ])/2.]
-end
-
 function csuros_miklos(x, node::ModelNode{T}) where T<:Real
     L = minfs(T, maximum(x)+1, length(x))
     for n in postwalk(node)
@@ -295,12 +318,14 @@ function csuros_miklos!(L::Matrix{T}, x::Vector{Int64},
         Mc = [x[c.i] for c in children]
         _M = cumsum([0 ; Mc])
         _ϵ = cumprod([1.; [gete(c, 1) for c in node.c]])
+        if any(_ϵ .> 1.)  # FIXME:
+            _ϵ[_ϵ .> 1.] .= 1.
+        end
         B = minfs(eltype(_ϵ), length(Mc), _M[end]+1, mx+1)
         A = minfs(eltype(_ϵ), length(Mc), _M[end]+1)
         for i = 1:length(Mc)
             c = children[i]
             Mi = Mc[i]
-
             Wc = c.x.W[1:mx+1, 1:mx+1]
             B[i, 1, :] = log.(Wc * exp.(L[1:mx+1, c.i]))
 

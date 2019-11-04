@@ -7,8 +7,8 @@ module Beluga
 
     import Distributions: logpdf, logpdf!
 
-    include("_utils.jl")
     include("_model.jl")
+    include("_utils.jl")
     include("_profile.jl")
 
     export DuplicationLossWGDModel, DLWGD, logpdf, logpdf!, update!
