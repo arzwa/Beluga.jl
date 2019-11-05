@@ -9,7 +9,7 @@ import Beluga: extend!, shrink!
 import AdaptiveMCMC: ProposalKernel
 
 df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
-df = df[1:25,:]
+df = df[100:110,:]
 nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
 ro(x, d=3) = round(x, digits=d)
 
@@ -29,14 +29,14 @@ for i=1:1000
     chain.state[:gen] += 1
     # push!(trace, branchrates(chain.model))
     push!(trace,deepcopy(chain.state))
-    if i%10 == 0
+    if i%1 == 0
         @unpack state = chain
         x = [state[:gen], ro(state[:logp]), ro(state[:logπ]), state[:k]]
         println("⋅ ", join(x, ", "))
     end
 end
 
-logpdf!(p[1].Lp, p[1].xp, chain.model)
+logpdf!(p[2].Lp, p[2].xp, chain.model)
 
 for (i,n) in chain.model.nodes
     x = [x[id(n, :λ)] for x in trace[100:end]] ; @show i, mean(x)

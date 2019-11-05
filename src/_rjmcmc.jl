@@ -56,7 +56,8 @@ end
 function logpdf(prior::RevJumpPrior, d::DLWGD)
     @unpack Σ₀, X₀, πη, πq, πK = prior
     p = 0.; M = 2; J = 1.; k = 0
-    Y = zeros(length(d)-1, M)
+    N = 2*length(d.leaves) - 2
+    Y = zeros(N, M)
     A = zeros(M,M)
     for (i, n) in d.nodes
         if iswgdafter(n)
@@ -75,7 +76,8 @@ function logpdf(prior::RevJumpPrior, d::DLWGD)
             J *= Δt
         end
     end
-    p += logp_pics(Σ₀, (Y=Y, J=J^(-M/2), A=A, q=M+1, n=length(d)-1))
+
+    p += logp_pics(Σ₀, (Y=Y, J=J^(-M/2), A=A, q=M+1, n=N))
     p += logpdf(πK, k)
     p::Float64  # type stability not entirely optimal
 end
@@ -182,11 +184,11 @@ function move_addwgd!(chain)
     # XXX unpack copies the model or something??
     @unpack data, state, model, props, prior = chain
     n, t = randpos(chain.model)
-    wgdnode = insertwgd!(chain.model, n, t, rand(prior.πq)/10.)
+    wgdnode = insertwgd!(chain.model, n, t, rand(prior.πq)/20.)
     extend!(data, n.i)
     l_ = logpdf!(n, data)
     p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ]
+    hr = l_ + p_ - state[:logp] - state[:logπ]  # ±log(2)
     # @show l_, p_, n.i, t
     if log(rand()) < hr
         state[:logp] = l_
@@ -211,7 +213,7 @@ function move_rmwgd!(chain)
     shrink!(data, wgdnode.i)
     l_ = logpdf!(child, data)
     p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ]
+    hr = l_ + p_ - state[:logp] - state[:logπ]  # ±log(2)
     if log(rand()) < hr
         state[:logp] = l_
         state[:logπ] = p_

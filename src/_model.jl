@@ -360,6 +360,7 @@ function csuros_miklos!(L::Matrix{T}, x::Vector{Int64},
             end
         end
         for n=0:x[node.i]
+            @show A, x[node.i]
             L[n+1, node.i] = A[end, n+1]
         end
     end
