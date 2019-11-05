@@ -6,20 +6,31 @@ abstract type Model end
 
 const Proposals_ = Dict{Int64,Vector{ProposalKernel}}
 
-@with_kw struct RevJumpChain{T<:Real,M<:Model}
+@with_kw mutable struct RevJumpChain{T<:Real,M<:Model}
     data ::PArray{T}
     model::DLWGD{T}
     prior::M          = RevJumpPrior()
     props::Proposals_ = Proposals_()
     state::State      = State(:gen=>0, :logp=>NaN, :logπ=>NaN, :k=>0)
+    trace::DataFrame  = DataFrame()
 end
 
 function init!(chain::RevJumpChain)
     @unpack data, model, prior, state, props = chain
-    state[:logp] = logpdf!(model, data)
-    state[:logπ] = logpdf(prior, model)
+    setstate!(state, model, prior, data)
+    trace!(chain)
     set!(data)
     setprops!(props, model)
+end
+
+function setstate!(state, model, prior, data)
+    for (i, n) in model.nodes
+        for (k, v) in n.x.θ
+            k != :t ? state[id(n, k)] = v : nothing
+        end
+    end
+    state[:logp] = logpdf!(model, data)
+    state[:logπ] = logpdf(prior, model)
 end
 
 function setprops!(props, model)
@@ -37,6 +48,12 @@ function setprops!(props, model)
     end
 end
 
+function trace!(chain)
+    @unpack state, trace = chain
+    chain.trace = vcat(trace, DataFrame(;sort(state)...), cols=:union)
+end
+
+
 # Prior
 # =====
 const Prior = Union{<:Distribution,Array{<:Distribution,1},<:Real}
@@ -49,14 +66,14 @@ logpdf(x::Real, y) = 0.
     X₀::Prior            = MvNormal([1.,1.])
     πη::Prior            = Beta(3., 0.33)
     πq::Prior            = Beta()
-    πK::Prior            = Poisson(10)
+    πK::Prior            = Geometric(0.1)
 end
 
 # one-pass prior computation based on the model
 function logpdf(prior::RevJumpPrior, d::DLWGD)
     @unpack Σ₀, X₀, πη, πq, πK = prior
     p = 0.; M = 2; J = 1.; k = 0
-    N = 2*length(d.leaves) - 2
+    N = ne(d)
     Y = zeros(N, M)
     A = zeros(M,M)
     for (i, n) in d.nodes
@@ -76,7 +93,6 @@ function logpdf(prior::RevJumpPrior, d::DLWGD)
             J *= Δt
         end
     end
-
     p += logp_pics(Σ₀, (Y=Y, J=J^(-M/2), A=A, q=M+1, n=N))
     p += logpdf(πK, k)
     p::Float64  # type stability not entirely optimal
@@ -162,9 +178,19 @@ end
 function move_wgd!(chain, n)
     @unpack data, state, model, props, prior = chain
     prop = props[n.i][1]
+    child = first(first(n))
     q = n[:q]
-    q_, r = prop(q)
-    update!(n, :q, q_)
+    t1 = n[:t]
+    t = t2 = child[:t]
+    r = rand()
+    if r < 0.66  # move q
+        q_, r = prop(q)
+        n[:q] = q_  # update from child below
+    elseif r > 0.33  # move t
+        t = rand()*(t1 + t2)
+        n[:t] = t1 + t2 - t  # update from child below
+    end
+    update!(child, :t, t)
     l_ = logpdf!(n, data)
     p_ = logpdf(prior, model)
     hr = l_ + p_ - state[:logp] - state[:logπ] + r
@@ -175,7 +201,9 @@ function move_wgd!(chain, n)
         set!(data)
         prop.accepted += 1
     else
-        update!(n, :q, q)
+        n[:q] = q
+        n[:t] = t1
+        update!(child, :t, t2)
         rev!(data)
     end
 end
@@ -185,11 +213,11 @@ function move_addwgd!(chain)
     @unpack data, state, model, props, prior = chain
     n, t = randpos(chain.model)
     wgdnode = insertwgd!(chain.model, n, t, rand(prior.πq)/20.)
-    extend!(data, n.i)
+    length(data[1].x) == 0 ? nothing : extend!(data, n.i)
     l_ = logpdf!(n, data)
     p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ]  # ±log(2)
-    # @show l_, p_, n.i, t
+    hr = state[:k] == 0 ? log(0.5) : 0.  # see Rabosky
+    hr += l_ + p_ - state[:logp] - state[:logπ]
     if log(rand()) < hr
         state[:logp] = l_
         state[:logπ] = p_
@@ -205,24 +233,35 @@ end
 
 function move_rmwgd!(chain)
     @unpack data, state, model, props, prior = chain
-    if nwgd(model) == 0
+    if nwgd(chain.model) == 0
         return
     end
+    # _model = deepcopy(chain.model)  # TODO find solution
     wgdnode = randwgd(chain.model)
-    child = removewgd!(chain.model, wgdnode)
-    shrink!(data, wgdnode.i)
+    wgdafter = first(wgdnode)
+    child = removewgd!(chain.model, wgdnode, false)
     l_ = logpdf!(child, data)
     p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ]  # ±log(2)
+    hr = state[:k] == 1 ? log(2.) : 0.  # see Rabosky
+    hr += l_ + p_ - state[:logp] - state[:logπ]
     if log(rand()) < hr
+        # upon acceptance; shrink and reindex
+        length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)
+        delete!(props, wgdnode.i)
+        delete!(state, id(wgdnode, :q))
+        Beluga.reindex!(chain.model, wgdnode.i+2)
+        reindex!(chain.props, wgdnode.i+2)
+        set!(data)
         state[:logp] = l_
         state[:logπ] = p_
         state[:k] -= 1
-        delete!(props, wgdnode.i)
-        delete!(state, id(wgdnode, :q))
-        set!(data)
     else
-        insertwgd!(chain.model, child, wgdnode[:t], wgdnode[:q])
+        # re-inserting instead of the deepcopy above is tricky, since we insert
+        # a node at the end, which may be a different index; if we refactor
+        # removewgd to not reindex, we could re-insert the original wgdnode
+        # upon rejection, re-insert the original node
+        insertwgd!(chain.model, child, wgdnode, wgdafter)
+        # chain.model = _model
         rev!(data)
     end
 end
@@ -248,4 +287,11 @@ function getwgds(model)
         i -= 1
     end
     wgds
+end
+
+function reindex!(d::Dict{Int64,T}, i::Int64) where T
+    for j=i:2:maximum(keys(d))
+        d[j-2] = deepcopy(d[j])
+        delete!(d, j)
+    end
 end

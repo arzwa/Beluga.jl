@@ -1,5 +1,5 @@
 # NOTE:
-# * changed dimensions of L matrix (m × # nodes)
+# * generalize to incl
 # * should evaluate numerical accurracy in some way
 # * would prefer to have more tests
 
@@ -78,6 +78,7 @@ Base.show(io::IO, d::DLWGD{T}) where T = write(io, "DLWGD{$T}($(length(d)))")
 Base.length(d::DLWGD) = length(d.nodes)
 Base.getindex(d::DLWGD, i::Int64) = d.nodes[i]
 Base.getindex(d::DLWGD, i::Int64, s::Symbol) = d.nodes[i][s]
+ne(d::DLWGD) = 2*length(d.leaves) - 2  # number of edges ignoring WGDs
 
 function DuplicationLossWGDModel(nw::String, df::DataFrame, λ=1., μ=1., η=0.9)
     @unpack t, l = readnw(nw)
@@ -139,33 +140,42 @@ function insertwgd!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
     parent = n.p
     n[:t] - t < 0. ? throw(DomainError("$(n[:t]) - $t < 0.")) : nothing
     i = maximum(keys(d.nodes))+1
-    n1 = wgdnode(i, parent, q, n[:t] - t)
-    n2 = wgdafternode(i+1, n1)
-    delete!(parent, n)
-    push!(parent, n1)
-    push!(n1, n2)
-    push!(n2, n)
-    n.p = n2
-    n[:t] = t
-    d.nodes[i] = n1
-    d.nodes[i+1] = n2
-    setabove!(n)
-    return n1
+    w = wgdnode(i, parent, q, n[:t] - t)
+    a = wgdafternode(i+1, w)
+    insertwgd!(d, n, w, a)
 end
 
-function removewgd!(d::DLWGD, n::ModelNode)
+function insertwgd!(d::DLWGD{T}, n::ModelNode{T},
+        w::ModelNode{T}, a::ModelNode{T}) where T<:Real
+    # NOTE: this function assumes `w` and `a` have their parents already
+    # but not children; this is not very elegant
+    delete!(n.p, n)
+    push!(n.p, w)
+    push!(w, a)
+    push!(a, n)
+    n.p = a
+    n[:t] -= w[:t]
+    d.nodes[w.i] = w
+    d.nodes[a.i] = a
+    setabove!(n)
+    return w
+end
+
+function removewgd!(d::DLWGD, n::ModelNode, reindex::Bool=true)
     if !iswgd(n)
         throw(ArgumentError("Not a WGD node $i"))
     end
     parent = n.p
     child = first(first(n))
+    delete!(first(n), child)
+    delete!(n, first(n))
     delete!(parent, n)
     push!(parent, child)
     child.p = parent
     child[:t] += n[:t]
     delete!(d.nodes, n.i)
     delete!(d.nodes, n.i+1)
-    reindex!(d, n.i+2)
+    reindex ? reindex!(d, n.i+2) : nothing
     setabove!(child)
     return child
 end
@@ -317,6 +327,7 @@ function csuros_miklos!(L::Matrix{T}, x::Vector{Int64},
         children = [c for c in node.c]
         Mc = [x[c.i] for c in children]
         _M = cumsum([0 ; Mc])
+        # @show Mc, _M
         _ϵ = cumprod([1.; [gete(c, 1) for c in node.c]])
         if any(_ϵ .> 1.)  # FIXME:
             _ϵ[_ϵ .> 1.] .= 1.
@@ -360,7 +371,7 @@ function csuros_miklos!(L::Matrix{T}, x::Vector{Int64},
             end
         end
         for n=0:x[node.i]
-            @show A, x[node.i]
+            # @show node.i, x[node.i], A
             L[n+1, node.i] = A[end, n+1]
         end
     end

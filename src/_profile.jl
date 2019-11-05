@@ -11,10 +11,11 @@ using DistributedArrays
 abstract type AbstractProfile end
 
 """
-    Profile{V<:Real}
+    Profile{T<:Real}
 
 Struct for a phylogenetic profile of a single family. Geared towards MCMC
-applications.
+applications (temporary storage fields) and parallel applications (using
+DArrays). See also `PArray`.
 """
 @with_kw mutable struct Profile{T<:Real} <: AbstractProfile
     x ::Vector{Int64}
@@ -24,22 +25,29 @@ applications.
 end
 
 const PArray{T} = DArray{Profile{T},1,Array{Profile{T},1}} where T<:Real
+PArray() = distribute([Profile()])
 
+Profile() = Profile(Int64[], Int64[], zeros(0,0), zeros(0,0))
 Profile(x::Vector{Int64}, n=length(x), m=maximum(x)+1) = Profile(x=x, L=minfs(Float64,m,n))
 Profile(X::Matrix{Int64}) = distribute([Profile(X[:,i]) for i=1:size(X)[2]])
 
-logpdf!(d::DLWGD, p::PArray) = mapreduce((x)->logpdf!(x.Lp, x.xp, d), +, p)
-logpdf!(n::ModelNode, p::PArray) = mapreduce((x)->logpdf!(x.Lp, x.xp, n), +, p)
-logpdfroot(n::ModelNode, p::PArray) = mapreduce((x)->logpdfroot(x.Lp, n), +, p)
 
+# TODO: the length hack is quite ugly, maybe nicer to have a type for empty
+# (mock) profiles [for sampling from the prior alone in MCMC applications]
+logpdf!(d::DLWGD, p::PArray) = length(p[1].x) == 0 ?
+    0. : mapreduce((x)->logpdf!(x.Lp, x.xp, d), +, p)
+
+logpdf!(n::ModelNode, p::PArray) = length(p[1].x) == 0 ?
+    0. : mapreduce((x)->logpdf!(x.Lp, x.xp, n), +, p)
+
+logpdfroot(n::ModelNode, p::PArray) = length(p[1].x) == 0 ?
+    0. : mapreduce((x)->logpdfroot(x.Lp, n), +, p)
+
+
+# Efficient setting/resetting
+# copyto! approach is slightly faster, but not compatible with arrays of ≠ dims
 set!(p::PArray) = map!(_set!, p, p)
 rev!(p::PArray) = map!(_rev!, p, p)
-
-# function _set!(p::Profile)  # slightly faster
-#     copyto!(p.x, p.xp)
-#     copyto!(p.L, p.Lp)
-#     p
-# end
 
 function _set!(p::Profile)
     p.x = deepcopy(p.xp)
@@ -47,18 +55,26 @@ function _set!(p::Profile)
     p
 end
 
-# function _rev!(p::Profile)  # slightly faster
-#     copyto!(p.xp, p.x)
-#     copyto!(p.Lp, p.L)
-#     p
-# end
-
 function _rev!(p::Profile)
     p.xp = deepcopy(p.x)
     p.Lp = deepcopy(p.L)
     p
 end
 
+# function _set!(p::Profile)  # slightly faster
+#     copyto!(p.x, p.xp)
+#     copyto!(p.L, p.Lp)
+#     p
+# end
+
+# function _rev!(p::Profile)  # slightly faster
+#     copyto!(p.xp, p.x)
+#     copyto!(p.Lp, p.L)
+#     p
+# end
+
+
+# extend/shrink profiles (reversible jump MCMC applications)
 extend!(p::PArray, i::Int64) = map!((x)->_extend!(x,i), p, p)
 shrink!(p::PArray, i::Int64) = map!((x)->_shrink!(x,i), p, p)
 
