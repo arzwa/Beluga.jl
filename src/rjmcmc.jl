@@ -15,6 +15,8 @@ const Proposals_ = Dict{Int64,Vector{ProposalKernel}}
     trace::DataFrame  = DataFrame()
 end
 
+Base.vec(chain::RevJumpChain) = Vector(chain.trace[end,:])
+
 function init!(chain::RevJumpChain)
     @unpack data, model, prior, state, props = chain
     setstate!(state, model, prior, data)
@@ -66,7 +68,7 @@ logpdf(x::Real, y) = 0.
     X₀::Prior            = MvNormal([1.,1.])
     πη::Prior            = Beta(3., 0.33)
     πq::Prior            = Beta()
-    πK::Prior            = Geometric(0.1)
+    πK::Prior            = Geometric(0.5)
 end
 
 # one-pass prior computation based on the model
@@ -216,7 +218,9 @@ function move_addwgd!(chain)
     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
     l_ = logpdf!(n, data)
     p_ = logpdf(prior, chain.model)
-    hr = state[:k] == 0 ? log(0.5) : 0.  # see Rabosky
+    # hr = state[:k] == 0 ? log(0.5) : 0.  # see Rabosky
+    # if we use the move where a removal or addition is chosen with P=0.5, this
+    # is not necessary as q(M0|M1) = q(M1|M0) = 0.5
     hr += l_ + p_ - state[:logp] - state[:logπ]
     if log(rand()) < hr
         state[:logp] = l_
@@ -242,7 +246,9 @@ function move_rmwgd!(chain)
     child = removewgd!(chain.model, wgdnode, false)
     l_ = logpdf!(child, data)
     p_ = logpdf(prior, chain.model)
-    hr = state[:k] == 1 ? log(2.) : 0.  # see Rabosky
+    # hr = state[:k] == 1 ? log(2.) : 0.  # see Rabosky
+    # if we use the move where a removal or addition is chosen with P=0.5, this
+    # is not necessary as q(M0|M1) = q(M1|M0) = 0.5
     hr += l_ + p_ - state[:logp] - state[:logπ]
     if log(rand()) < hr
         # upon acceptance; shrink and reindex
@@ -293,5 +299,16 @@ function reindex!(d::Dict{Int64,T}, i::Int64) where T
     for j=i:2:maximum(keys(d))
         d[j-2] = deepcopy(d[j])
         delete!(d, j)
+    end
+end
+
+function branchrates!(chain)
+    @unpack model, trace = chain
+    for (i,n) in model.nodes
+        if isroot(n) || isawgd(n) ; continue ; end
+        l = (trace[id(n, :λ)] .+ trace[id(nonwgdparent(n.p), :λ)]) / 2.
+        m = (trace[id(n, :μ)] .+ trace[id(nonwgdparent(n.p), :μ)]) / 2.
+        trace[Symbol("l$i")] = l
+        trace[Symbol("m$i")] = m
     end
 end

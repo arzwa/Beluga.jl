@@ -1,16 +1,9 @@
-using Test, DataFrames, CSV, Distributions, Random, DistributedArrays
-using AdaptiveMCMC
+using Test, DataFrames, CSV, Distributions, LinearAlgebra
 using Beluga
-using Parameters, LinearAlgebra, StatsBase
-import Distributions: logpdf
-import Beluga: iswgdafter, iswgd, nonwgdparent, parentdist, isroot, set!, rev!
-import Beluga: ModelNode, update!, logpdfroot, branchrates, isawgd, iswgd
-import Beluga: extend!, shrink!, ne, reindex!
-import AdaptiveMCMC: ProposalKernel
-include("../src/_rjmcmc.jl")
+
+
 
 df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
-df = CSV.read("test/data/plants1-100.tsv", delim=",")
 df = df[1:100,:]
 nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
 ro(x, d=3) = round(x, digits=d)
@@ -23,7 +16,6 @@ begin
     prior = RevJumpPrior(Σ₀=[500 0 ; 0 500], X₀=MvNormal(log.([2,2]), I))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     init!(chain)
-    trace = State[]
 end
 
 
@@ -36,7 +28,6 @@ begin
     wgdnode = insertwgd!(chain.model, chain.model[12], 0.03, 0.5)
     extend!(chain.data, 12)
     init!(chain)
-    trace = State[]
 end
 
 
@@ -52,7 +43,6 @@ begin
                          πK=Geometric(0.1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     init!(chain)
-    trace = State[]
 end
 
 
@@ -66,7 +56,18 @@ begin
     wgdnode = insertwgd!(chain.model, chain.model[12], 0.03, 0.5)
     # extend!(chain.data, 12)
     init!(chain)
-    trace = State[]
+end
+
+# sample with WGD, no rj
+begin
+    df = CSV.read("test/data/plants1-100.tsv", delim=",")
+    d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9)
+    p = Profile(y)
+    prior = RevJumpPrior(Σ₀=[500 0. ; 0. 500], X₀=MvNormal(log.([2,2]), I), πq=Beta(1,1))
+    chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
+    wgdnode = insertwgd!(chain.model, chain.model[12], 0.03, 0.5)
+    extend!(chain.data, 12)
+    init!(chain)
 end
 
 for i=1:11000

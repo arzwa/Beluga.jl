@@ -1,67 +1,88 @@
-# struct to store the data, enabling recomputation etc. Not that this is a
-# fairly tedious interface if partial recomputation is not needed.
+# Profile
+# =======
+# NOTE not sure if really necessary to have the `xp` field, we could esaily
+# adapt the csuros-miklos algorithm to use the x of the `nonwgdchild` instead.
+# an alternative, that should be seriously looked at, is to use a dict of
+# vectors instead of a matrix
+
 abstract type AbstractProfile end
 
 """
-    Profile{V<:Real}
+    Profile{T<:Real}
 
-Struct for a phylogenetic profile of a single family.
+Struct for a phylogenetic profile of a single family. Geared towards MCMC
+applications (temporary storage fields) and parallel applications (using
+DArrays). See also `PArray`.
 """
-mutable struct Profile{V<:Real} <: AbstractProfile
-    x   ::Vector{Int64}
-    xtmp::Vector{Int64}
-    L   ::Matrix{V}
-    Ltmp::Matrix{V}
+@with_kw mutable struct Profile{T<:Real} <: AbstractProfile
+    x ::Vector{Int64}
+    xp::Vector{Int64} = deepcopy(x)
+    L ::Matrix{T}
+    Lp::Matrix{T} = deepcopy(L)
 end
 
-Profile(T::Type, x::Vector{Int64}, n::Int64) =
-    Profile{T}(x, x, minfs(T, n, maximum(x)+1), minfs(T, n, maximum(x)+1))
+const PArray{T} = DArray{Profile{T},1,Array{Profile{T},1}} where T<:Real
+PArray() = distribute([Profile()])
 
-Profile() = distribute(
-    Profile[Profile{Float64}(zeros(0), zeros(0,0), zeros(0,0))])
+Profile() = Profile(Int64[], Int64[], zeros(0,0), zeros(0,0))
+Profile(x::Vector{Int64}, n=length(x), m=maximum(x)+1) = Profile(x=x, L=minfs(Float64,m,n))
+Profile(X::Matrix{Int64}) = distribute([Profile(X[:,i]) for i=1:size(X)[2]])
 
-function Profile(df::DataFrame, tree::Arboreal)
-    X = profile(tree, df)
-    N, n = size(X)
-    D = Profile[Profile(Float64, X[i,:], n) for i=1:N]
-    distribute(D), maximum(X)
+
+# TODO: the length hack is quite ugly, maybe nicer to have a type for empty
+# (mock) profiles [for sampling from the prior alone in MCMC applications]
+logpdf!(d::DLWGD, p::PArray) = length(p[1].x) == 0 ?
+    0. : mapreduce((x)->logpdf!(x.Lp, x.xp, d), +, p)
+
+logpdf!(n::ModelNode, p::PArray) = length(p[1].x) == 0 ?
+    0. : mapreduce((x)->logpdf!(x.Lp, x.xp, n), +, p)
+
+logpdfroot(n::ModelNode, p::PArray) = length(p[1].x) == 0 ?
+    0. : mapreduce((x)->logpdfroot(x.Lp, n), +, p)
+
+
+# Efficient setting/resetting
+# copyto! approach is slightly faster, but not compatible with arrays of ≠ dims
+set!(p::PArray) = map!(_set!, p, p)
+rev!(p::PArray) = map!(_rev!, p, p)
+
+function _set!(p::Profile)
+    p.x = deepcopy(p.xp)
+    p.L = deepcopy(p.Lp)
+    p
 end
 
-const PArray = DArray{Profile,1,Array{Profile,1}}
-
-
-# likelihoods
-# ===========
-"""
-    logpdf!(m::PhyloBDP, p::PArray, [node::Int64])
-
-Accumulate the logpdf along a PArray (distributed profile array).
-"""
-function logpdf!(m::PhyloBDP, p::PArray,
-        branches::Vector{Int64}=m.tree.order)
-    if length(p[1].x) == 0.  # HACK
-        return 0.
-    end
-    mapreduce((x)->logpdf!(x.Ltmp, m, x.xtmp, branches), +, p)
+function _rev!(p::Profile)
+    p.xp = deepcopy(p.x)
+    p.Lp = deepcopy(p.L)
+    p
 end
 
-logpdf(m::DuplicationLossWGD{T,V}, p::PArray) where
-        {T<:Real,V<:Arboreal} = mapreduce((x)->logpdf(m, x.x), +, p)
+# function _set!(p::Profile)  # slightly faster
+#     copyto!(p.x, p.xp)
+#     copyto!(p.L, p.Lp)
+#     p
+# end
+
+# function _rev!(p::Profile)  # slightly faster
+#     copyto!(p.xp, p.x)
+#     copyto!(p.Lp, p.L)
+#     p
+# end
 
 
-# bookkeeping
-# ===========
-set!(p::PArray) = ppeval(_set!, p)
-rev!(p::PArray) = ppeval(_rev!, p)
+# extend/shrink profiles (reversible jump MCMC applications)
+extend!(p::PArray, i::Int64) = map!((x)->_extend!(x,i), p, p)
+shrink!(p::PArray, i::Int64) = map!((x)->_shrink!(x,i), p, p)
 
-function _set!(p)
-    p[1].L = deepcopy(p[1].Ltmp)  # XXX this must be a deepcopy!!!
-    p[1].x = deepcopy(p[1].xtmp)
-    0
+function _extend!(p::Profile{T}, i::Int64) where T<:Real
+    p.xp = vcat(p.xp, p.xp[i], p.xp[i])
+    p.Lp = hcat(p.Lp, minfs(T, size(p.Lp)[1], 2))
+    p
 end
 
-function _rev!(p)
-    p[1].Ltmp = deepcopy(p[1].L)  # XXX this must be a deepcopy!!!
-    p[1].xtmp = deepcopy(p[1].x)
-    0
+function _shrink!(p::Profile{T}, i::Int64) where T<:Real
+    p.xp = vcat(p.xp[1:i-1], p.xp[i+2:end])
+    p.Lp = hcat(p.Lp[:,1:i-1], p.Lp[:,i+2:end])
+    p
 end

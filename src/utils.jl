@@ -4,6 +4,7 @@ minfs(::Type{T}, dims::Tuple{}) where T<:Real = Array{T}(fill(-Inf, dims))
 minfs(::Type{T}, dims::Union{Integer, AbstractUnitRange}...) where T<:Real =
     Array{T}(fill(-Inf, dims))
 
+
 # BDP utilities
 # =============
 getϕ(t, λ, μ) = λ ≈ μ ? λ*t/(1. + λ*t) : μ*(exp(t*(λ-μ))-1.)/(λ*exp(t*(λ-μ))-μ)
@@ -17,6 +18,7 @@ approx0(x) = x ≈ zero(x) ? zero(x) : x
 
 geometric_extinctionp(ϵ::Real, η::Real)=geometric_extinctionp(promote(ϵ, η)...)
 geometric_extinctionp(ϵ::T, η::T) where T<:Real = η + ϵ -log1mexp(log1mexp(η)+ϵ)
+
 
 # Tree utilities
 # ==============
