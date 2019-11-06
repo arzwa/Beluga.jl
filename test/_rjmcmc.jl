@@ -7,7 +7,7 @@ df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=","
 df = df[1:100,:]
 nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
 ro(x, d=3) = round(x, digits=d)
-
+ro(x::Missing) = NaN
 
 # data
 begin
@@ -19,18 +19,6 @@ begin
 end
 
 
-# with WGD, no reversible jump
-begin
-    d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9)
-    p = Profile(y)
-    prior = RevJumpPrior(Σ₀=[500 0. ; 0. 500], X₀=MvNormal(log.([2,2]), I), πq=Beta(2,2))
-    chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
-    wgdnode = insertwgd!(chain.model, chain.model[12], 0.03, 0.5)
-    extend!(chain.data, 12)
-    init!(chain)
-end
-
-
 # sample from the prior
 # NOTE: for the reversible jump chain under the geometric prior, a removal step
 # will always be accepted when it is not acccompanied by a change in parameters
@@ -38,7 +26,7 @@ end
 begin
     d, y = DuplicationLossWGDModel(nw, df[1:2,:], exp(randn()), exp(randn()), 0.9)
     p = PArray()
-    prior = RevJumpPrior(Σ₀=[500 0. ; 0. 500],
+    prior = RevJumpPrior(Σ₀=[100 0. ; 0. 100],
                          X₀=MvNormal(log.([2,2]), I),
                          πK=Geometric(0.1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
@@ -58,26 +46,33 @@ begin
     init!(chain)
 end
 
-# sample with WGD, no rj
+# sample with WGD
 begin
     df = CSV.read("test/data/plants1-100.tsv", delim=",")
+    nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
     d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9)
     p = Profile(y)
-    prior = RevJumpPrior(Σ₀=[500 0. ; 0. 500], X₀=MvNormal(log.([2,2]), I), πq=Beta(1,1))
+    prior = RevJumpPrior(Σ₀=[100 0. ; 0. 100], X₀=MvNormal(log.([2,2]), I), πK=Geometric(0.1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     wgdnode = insertwgd!(chain.model, chain.model[12], 0.03, 0.5)
     extend!(chain.data, 12)
+    wgdnode = insertwgd!(chain.model, chain.model[16], 0.03, 0.5)
+    extend!(chain.data, 16)
     init!(chain)
 end
 
+
 for i=1:11000
     chain.state[:gen] += 1
-    # rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
+    rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
     move!(chain)
     trace!(chain)
     if i%1 == 0
         println("↘ ", join(ro.(Vector(chain.trace[end,1:9])), ", "), " ⋯")
     end
+    # if i%15 == 0
+    #     display(postwalk(chain.model[1]))
+    # end
 end
 
 l  = [x[id(chain.model[i], :λ)] for x in trace[1001:end], i=1:19]

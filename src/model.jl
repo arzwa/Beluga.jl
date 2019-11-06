@@ -149,7 +149,7 @@ function insertwgd!(d::DLWGD{T}, n::ModelNode{T},
         w::ModelNode{T}, a::ModelNode{T}) where T<:Real
     # NOTE: this function assumes `w` and `a` have their parents already
     # but not children; this is not very elegant
-    delete!(n.p, n)
+    n.p.c = setdiff(n.p.c, Set([n])) # ??
     push!(n.p, w)
     push!(w, a)
     push!(a, n)
