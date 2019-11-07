@@ -47,7 +47,7 @@ end
 # sample with WGD
 begin
     df = CSV.read("test/data/plants1-100.tsv", delim=",")
-    df = df[1:25,:]
+    # df = df[1:25,:]
     nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
     d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9)
     p = Profile(y)
