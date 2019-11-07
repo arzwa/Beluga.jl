@@ -181,9 +181,6 @@ function move_root!(chain, n)
     end
 end
 
-# this move contains an independence sampler for the WGD time and a RW
-# metropolis step for the retention rate. We might get better mixing if we
-# also include the possibility to update relevant dup and loss rates.
 function move_wgdtime!(chain, n)
     @unpack data, state, model, props, prior = chain
     prop = props[n.i][1]
@@ -191,11 +188,12 @@ function move_wgdtime!(chain, n)
     q = n[:q]
     t1 = n[:t]
     t = t2 = child[:t]
-    r = rand()
-    if r < 0.66  # move q
+    u = rand()
+    r = 0.
+    if u < 0.66  # move q
         q_, r = prop(q)
         n[:q] = q_  # update from child below
-    elseif r > 0.33  # move t
+    elseif u > 0.33  # move t
         t = rand()*(t1 + t2)
         n[:t] = t1 + t2 - t  # update from child below
     end
@@ -208,7 +206,7 @@ function move_wgdtime!(chain, n)
         state[:logp] = l_
         state[:logπ] = p_
         set!(data)
-        prop.accepted += 1
+        u < 0.66 ? prop.accepted += 1 : nothing
     else
         n[:q] = q
         n[:t] = t1
@@ -227,9 +225,9 @@ function move_wgdrates!(chain, n)
     v = [q; log.(rates)]
     prop = rand(props[n.i][2:end])
     w, r = prop(v)
-    n[:q] = v[1]
-    flank[:λ] = exp(v[2])
-    flank[:μ] = exp(v[3])
+    n[:q] = w[1]
+    flank[:λ] = exp(w[2])
+    flank[:μ] = exp(w[3])
     update!(child)
     l_ = logpdf!(n, data)
     p_ = logpdf(prior, model)
@@ -389,7 +387,8 @@ end
 
 # Extension of AdaptiveMCMC lib, proposal moves for vectors [q, λ, μ]
 WgdProposals(ϵ=[1.0, 1.0, 1.0], ti=25) = [AdaptiveUvProposal(
-    Uniform(-e, e), ti, m) for (m, e) in zip([wgdrw, wgdrand, wgdiid], ϵ)]
+    kernel=Uniform(-e, e), tuneinterval=ti, move=m)
+        for (m, e) in zip([wgdrw, wgdrand, wgdiid], ϵ)]
 
 function wgdrw(k::AdaptiveUvProposal, x::Vector{Float64})
     xp = x .+ rand(k)

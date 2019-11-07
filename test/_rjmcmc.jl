@@ -1,5 +1,5 @@
 using Test, DataFrames, CSV, Distributions, LinearAlgebra
-using Beluga
+using Beluga, PhyloTree
 
 df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
 df = df[1:100,:]
@@ -52,7 +52,7 @@ begin
     d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9)
     p = Profile(y)
     # p = PArray()
-    prior = RevJumpPrior(Σ₀=[100 0. ; 0. 100], X₀=MvNormal(log.([2,2]), I), πK=Geometric(0.5))
+    prior = RevJumpPrior(Σ₀=[100 0. ; 0. 100], X₀=MvNormal(log.([2,2]), I), πK=Geometric(0.1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     # wgdnode = insertwgd!(chain.model, chain.model[12], 0.03, 0.5)
     # extend!(chain.data, 12)
@@ -70,6 +70,7 @@ for i=1:11000
     if i%1 == 0
         println("↘ ", join(ro.(Vector(chain.trace[end,1:9])), ", "), " ⋯")
     end
+    @assert length(chain.model) == length(postwalk(chain.model[1]))
     # if i%15 == 0
     #     display(postwalk(chain.model[1]))
     # end
