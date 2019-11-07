@@ -1,8 +1,6 @@
 using Test, DataFrames, CSV, Distributions, LinearAlgebra
 using Beluga
 
-
-
 df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
 df = df[1:100,:]
 nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
@@ -49,15 +47,17 @@ end
 # sample with WGD
 begin
     df = CSV.read("test/data/plants1-100.tsv", delim=",")
+    df = df[1:25,:]
     nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
     d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9)
     p = Profile(y)
-    prior = RevJumpPrior(Σ₀=[100 0. ; 0. 100], X₀=MvNormal(log.([2,2]), I), πK=Geometric(0.1))
+    # p = PArray()
+    prior = RevJumpPrior(Σ₀=[100 0. ; 0. 100], X₀=MvNormal(log.([2,2]), I), πK=Geometric(0.5))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
-    wgdnode = insertwgd!(chain.model, chain.model[12], 0.03, 0.5)
-    extend!(chain.data, 12)
-    wgdnode = insertwgd!(chain.model, chain.model[16], 0.03, 0.5)
-    extend!(chain.data, 16)
+    # wgdnode = insertwgd!(chain.model, chain.model[12], 0.03, 0.5)
+    # extend!(chain.data, 12)
+    # wgdnode = insertwgd!(chain.model, chain.model[16], 0.03, 0.5)
+    # extend!(chain.data, 16)
     init!(chain)
 end
 

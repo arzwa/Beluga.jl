@@ -43,7 +43,7 @@ function setprops!(props, model)
         if iswgdafter(n)
             continue
         elseif iswgd(n)
-            props[i] = [AdaptiveUnitProposal()]
+            props[i] = [AdaptiveUnitProposal(); WgdProposals()]
         elseif isroot(n)
             props[0] = [AdaptiveUnitProposal()]
             props[i] = CoevolUnProposals()
@@ -127,7 +127,8 @@ function move!(chain)
         if iswgdafter(n)
             continue
         elseif iswgd(n)
-            move_wgd!(chain, n)
+            move_wgdrates!(chain, n)
+            move_wgdtime!(chain, n)
         else
             if isroot(n)
                  move_root!(chain, n)
@@ -183,7 +184,7 @@ end
 # this move contains an independence sampler for the WGD time and a RW
 # metropolis step for the retention rate. We might get better mixing if we
 # also include the possibility to update relevant dup and loss rates.
-function move_wgd!(chain, n)
+function move_wgdtime!(chain, n)
     @unpack data, state, model, props, prior = chain
     prop = props[n.i][1]
     child = first(first(n))
@@ -216,6 +217,39 @@ function move_wgd!(chain, n)
     end
 end
 
+function move_wgdrates!(chain, n)
+    @unpack data, state, model, props, prior = chain
+    q = n[:q]
+    parent = nonwgdparent(n)
+    child = nonwgdchild(n)
+    flank = rand([parent, child])
+    rates = flank[:λ, :μ]
+    v = [q; log.(rates)]
+    prop = rand(props[n.i][2:end])
+    w, r = prop(v)
+    n[:q] = v[1]
+    flank[:λ] = exp(v[2])
+    flank[:μ] = exp(v[3])
+    update!(child)
+    l_ = logpdf!(n, data)
+    p_ = logpdf(prior, model)
+    hr = l_ + p_ - state[:logp] - state[:logπ] + r
+    if log(rand()) < hr
+        update!(state, n, :q)
+        update!(state, flank, :λ, :μ)
+        state[:logp] = l_
+        state[:logπ] = p_
+        set!(data)
+        prop.accepted += 1
+    else
+        n[:q] = q
+        flank[:λ] = rates[1]
+        flank[:μ] = rates[2]
+        update!(child)
+        rev!(data)
+    end
+end
+
 function move_addwgd!(chain)
     # XXX unpack copies the model or something??
     @unpack data, state, model, props, prior = chain
@@ -234,7 +268,7 @@ function move_addwgd!(chain)
         state[:k] += 1
         update!(state, wgdnode, :q)
         set!(data)
-        props[wgdnode.i] = [AdaptiveUnitProposal()]
+        props[wgdnode.i] = [AdaptiveUnitProposal() ; WgdProposals()]
     else
         removewgd!(chain.model, wgdnode)
         rev!(data)
@@ -350,4 +384,29 @@ function branchrates!(chain)
         trace[Symbol("l$i")] = l
         trace[Symbol("m$i")] = m
     end
+end
+
+
+# Extension of AdaptiveMCMC lib, proposal moves for vectors [q, λ, μ]
+WgdProposals(ϵ=[1.0, 1.0, 1.0], ti=25) = [AdaptiveUvProposal(
+    Uniform(-e, e), ti, m) for (m, e) in zip([wgdrw, wgdrand, wgdiid], ϵ)]
+
+function wgdrw(k::AdaptiveUvProposal, x::Vector{Float64})
+    xp = x .+ rand(k)
+    xp[1] = reflect(xp[1], 0., 1.)
+    return xp, 0.
+end
+
+function wgdrand(k::AdaptiveUvProposal, x::Vector{Float64})
+    i = rand(1:3)
+    xp = copy(x)
+    xp[i] = x[i] + rand(k)
+    i == 1 ? xp[1] = reflect(xp[1], 0., 1.) : nothing
+    return xp, 0.
+end
+
+function wgdiid(k::AdaptiveUvProposal, x::Vector{Float64})
+    xp = x .+ rand(k, 3)
+    xp[1] = reflect(xp[1], 0., 1.)
+    return xp, 0.
 end

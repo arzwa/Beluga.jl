@@ -26,18 +26,21 @@ issp(n::ModelNode) = n.x.kind == :sp
 gete(n::ModelNode, i::Int64) = n.x.ϵ[i]
 getw(n::ModelNode, i::Int64, j::Int64) = n.x.W[i,j]
 
-function update!(n::ModelNode{T}, θ::Symbol, v::T) where T<:Real
-    n[θ] = v
+function update!(n::ModelNode)
     setbelow!(n)
     setabove!(n)
+end
+
+function update!(n::ModelNode{T}, θ::Symbol, v::T) where T<:Real
+    n[θ] = v
+    update!(n)
 end
 
 function update!(n::ModelNode, θ::NamedTuple)
     for (k, v) in pairs(θ)
         n[k] = v
     end
-    setbelow!(n)
-    setabove!(n)
+    update!(n)
 end
 
 # Different node kinds (maybe we could use traits?)
