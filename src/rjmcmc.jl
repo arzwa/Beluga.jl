@@ -3,13 +3,14 @@
 # * initial implementation, hardcoded for only two correlated characters
 
 abstract type Model end
+abstract type RevJumpPrior <: Model end
 
 const Proposals_ = Dict{Int64,Vector{ProposalKernel}}
 
-@with_kw mutable struct RevJumpChain{T<:Real,M<:Model}
+@with_kw mutable struct RevJumpChain{T<:Real,M<:RevJumpPrior}
     data ::PArray{T}
     model::DLWGD{T}
-    prior::M          = RevJumpPrior()
+    prior::M          = CoevolRevJumpPrior()
     props::Proposals_ = Proposals_()
     state::State      = State(:gen=>0, :logp=>NaN, :logπ=>NaN, :k=>0)
     trace::DataFrame  = DataFrame()
@@ -19,13 +20,15 @@ Base.vec(chain::RevJumpChain) = Vector(chain.trace[end,:])
 
 function init!(chain::RevJumpChain)
     @unpack data, model, prior, state, props = chain
-    setstate!(state, model, prior, data)
+    setstate!(state, model)
+    state[:logp] = logpdf!(model, data)
+    state[:logπ] = logpdf(prior, model)
     trace!(chain)
     set!(data)
     setprops!(props, model)
 end
 
-function setstate!(state, model, prior, data)
+function setstate!(state, model)
     K = 0
     for (i, n) in model.nodes
         K += iswgd(n) ? 1 : 0
@@ -33,8 +36,6 @@ function setstate!(state, model, prior, data)
             k != :t ? state[id(n, k)] = v : nothing
         end
     end
-    state[:logp] = logpdf!(model, data)
-    state[:logπ] = logpdf(prior, model)
     state[:k] = K
 end
 
@@ -58,15 +59,24 @@ function trace!(chain)
     chain.trace = vcat(trace, DataFrame(;sort(state)...), cols=:union)
 end
 
+id(node::ModelNode, args::Symbol...) = [id(node, s) for s in args]
+id(node::ModelNode, s::Symbol) = Symbol("$s$(node.i)")
 
-# Prior
-# =====
+function update!(state::State, node::ModelNode, args...)
+    for s in args
+        state[id(node, s)] = node[s]
+    end
+end
+
+
+# Coevol-like Prior
+# =================
 const Prior = Union{<:Distribution,Array{<:Distribution,1},<:Real}
 
 Base.rand(x::Real) = x
 logpdf(x::Real, y) = 0.
 
-@with_kw struct RevJumpPrior <: Model
+@with_kw struct CoevolRevJumpPrior <: RevJumpPrior
     Σ₀::Matrix{Float64}  = [500. 0. ; 0. 500.]
     X₀::Prior            = MvNormal([1.,1.])
     πη::Prior            = Beta(3., 0.33)
@@ -110,25 +120,56 @@ function logp_pics(Σ₀, θ)
     log(J) + (q/2)*log(det(Σ₀)) - ((q + n)/2)*log(det(Σ₀ + A))
 end
 
-id(node::ModelNode, args::Symbol...) = [id(node, s) for s in args]
-id(node::ModelNode, s::Symbol) = Symbol("$s$(node.i)")
 
-function update!(state::State, node::ModelNode, args...)
-    for s in args
-        state[id(node, s)] = node[s]
+# Independent rates pior
+# ======================
+# This works for both branch and node rates?
+# I guess we can also exploit conjugacy in an independent rates prior for
+# branch rates?
+@with_kw struct IidRevJumpPrior <: RevJumpPrior
+    Σ₀::Matrix{Float64} = [100 0. ; 0. 100]
+    X₀::Prior = MvNormal([1.,1.])
+    πη::Prior = Beta(3., 0.33)
+    πq::Prior = Beta()
+    πK::Prior = Geometric(0.5)
+end
+
+function logpdf(prior::IidRevJumpPrior, d::DLWGD)
+    @unpack Σ₀, X₀, πη, πq, πK = prior
+    p = 0.; M = 2; J = 1.; k = 0
+    N = ne(d)
+    Y = zeros(N, M)
+    A = zeros(M,M)
+    X0 = log.(d[1][:λ, :μ])
+    for (i, n) in d.nodes
+        if iswgdafter(n)
+            continue
+        elseif iswgd(n)
+            p += logpdf(πq, n[:q])  # what about the time? it is also random?
+            k += 1
+        elseif isroot(n)
+            p += logpdf(πη, n[:η])
+            p += logpdf(X₀, X0)
+        else
+            Y[i-1,:] = log.(n[:λ, :μ]) - X0
+            A += Y[i-1,:]*Y[i-1,:]'
+        end
     end
+    p += logp_pics(Σ₀, (Y=Y, J=1., A=A, q=M+1, n=N))
+    p += logpdf(πK, k)
+    p::Float64  # type stability not entirely optimal
 end
 
 # Moves
 # =====
 function move!(chain)
     @unpack model = chain
-    for (i, n) in model.nodes
+    for n in postwalk(model[1])
         if iswgdafter(n)
             continue
         elseif iswgd(n)
-            move_wgdrates!(chain, n)
             move_wgdtime!(chain, n)
+            move_wgdrates!(chain, n)
         else
             if isroot(n)
                  move_root!(chain, n)
@@ -181,6 +222,7 @@ function move_root!(chain, n)
     end
 end
 
+# ove for both retention rate and time of WGD
 function move_wgdtime!(chain, n)
     @unpack data, state, model, props, prior = chain
     prop = props[n.i][1]
@@ -215,7 +257,7 @@ function move_wgdtime!(chain, n)
     end
 end
 
-function move_wgdrates!(chain, n)
+function move_wgdrates!(chain::RevJumpChain{T,CoevolRevJumpPrior}, n) where T
     @unpack data, state, model, props, prior = chain
     q = n[:q]
     parent = nonwgdparent(n)
@@ -244,6 +286,33 @@ function move_wgdrates!(chain, n)
         flank[:λ] = rates[1]
         flank[:μ] = rates[2]
         update!(child)
+        rev!(data)
+    end
+end
+
+function move_wgdrates!(chain::RevJumpChain{T,IidRevJumpPrior}, n) where T
+    @unpack data, state, model, props, prior = chain
+    q = n[:q]
+    child = nonwgdchild(n)
+    rates = child[:λ, :μ]
+    v = [q; log.(rates)]
+    prop = rand(props[n.i][2:end])
+    w, r = prop(v)
+    n[:q] = w[1]
+    update!(child, (λ=exp(w[2]), μ=exp(w[3])))
+    l_ = logpdf!(n, data)
+    p_ = logpdf(prior, model)
+    hr = l_ + p_ - state[:logp] - state[:logπ] + r
+    if log(rand()) < hr
+        update!(state, n, :q)
+        update!(state, child, :λ, :μ)
+        state[:logp] = l_
+        state[:logπ] = p_
+        set!(data)
+        prop.accepted += 1
+    else
+        n[:q] = q
+        update!(child, (λ=rates[1], μ=rates[2]))
         rev!(data)
     end
 end
@@ -296,9 +365,9 @@ function move_rmwgd!(chain)
         reindex!(chain.model, wgdnode.i+2)
         reindex!(chain.props, wgdnode.i+2)
         set!(data)
+        setstate!(state, chain.model)
         state[:logp] = l_
         state[:logπ] = p_
-        state[:k] -= 1
     else
         # re-inserting instead of the deepcopy above is tricky, since we insert
         # a node at the end, which may be a different index; if we refactor
@@ -358,7 +427,7 @@ nwgd(model) = length(getwgds(model))
 randwgd(model) = model[rand(getwgds(model))]
 
 function getwgds(model)
-    wgds = Int64[]; i = length(model)
+    wgds = Int64[]; i = maximum(keys(model.nodes))
     while isawgd(model[i])
         iswgd(model[i]) ? push!(wgds, i) : nothing
         i -= 1
@@ -386,9 +455,9 @@ end
 
 
 # Extension of AdaptiveMCMC lib, proposal moves for vectors [q, λ, μ]
-WgdProposals(ϵ=[1.0, 1.0, 1.0], ti=25) = [AdaptiveUvProposal(
+WgdProposals(ϵ=[1.0, 1.0, 1.0, 1.0], ti=25) = [AdaptiveUvProposal(
     kernel=Uniform(-e, e), tuneinterval=ti, move=m)
-        for (m, e) in zip([wgdrw, wgdrand, wgdiid], ϵ)]
+        for (m, e) in zip([wgdrw, wgdrand, wgdiid, wgdqλ], ϵ)]
 
 function wgdrw(k::AdaptiveUvProposal, x::Vector{Float64})
     xp = x .+ rand(k)
@@ -406,6 +475,15 @@ end
 
 function wgdiid(k::AdaptiveUvProposal, x::Vector{Float64})
     xp = x .+ rand(k, 3)
+    xp[1] = reflect(xp[1], 0., 1.)
+    return xp, 0.
+end
+
+function wgdqλ(k::AdaptiveUvProposal, x::Vector{Float64})
+    xp = copy(x)
+    r = rand(k)
+    xp[1] += r
+    xp[2] -= r
     xp[1] = reflect(xp[1], 0., 1.)
     return xp, 0.
 end

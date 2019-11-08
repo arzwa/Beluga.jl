@@ -1,8 +1,9 @@
+using Pkg; Pkg.activate("/home/arzwa/julia-dev/Beluga/")
 using Test, DataFrames, CSV, Distributions, LinearAlgebra
 using Beluga, PhyloTree
 
 df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
-df = df[1:100,:]
+df = df[1:50,:]
 nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
 ro(x, d=3) = round(x, digits=d)
 ro(x::Missing) = NaN
@@ -47,17 +48,40 @@ end
 # sample with WGD
 begin
     df = CSV.read("test/data/plants1-100.tsv", delim=",")
-    # df = df[1:25,:]
+    # df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
+    df = df[1:100,:]
     nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
     d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9)
     p = Profile(y)
-    # p = PArray()
-    prior = RevJumpPrior(Σ₀=[100 0. ; 0. 100], X₀=MvNormal(log.([2,2]), I), πK=Geometric(0.1))
+    p = PArray()
+    prior = CoevolRevJumpPrior(
+        Σ₀=[100 0. ; 0. 100],
+        X₀=MvNormal(log.([2,2]), I),
+        πK=Geometric(0.1),
+        πq=Beta(1,1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     # wgdnode = insertwgd!(chain.model, chain.model[12], 0.03, 0.5)
     # extend!(chain.data, 12)
     # wgdnode = insertwgd!(chain.model, chain.model[16], 0.03, 0.5)
     # extend!(chain.data, 16)
+    init!(chain)
+end
+
+# branch model
+begin
+    df = CSV.read("test/data/plants1-100.tsv", delim=",")
+    # df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
+    df = df[1:50,:]
+    nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
+    d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9, Beluga.BelugaBranch)
+    p = Profile(y)
+    # p = PArray()
+    prior = IidRevJumpPrior(
+        Σ₀=[5 0. ; 0. 5],
+        X₀=MvNormal(log.([2,2]), I),
+        πK=Geometric(0.5),
+        πq=Beta(1,1))
+    chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     init!(chain)
 end
 
@@ -67,7 +91,7 @@ for i=1:11000
     rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
     move!(chain)
     trace!(chain)
-    if i%1 == 0
+    if i%10 == 0
         println("↘ ", join(ro.(Vector(chain.trace[end,1:9])), ", "), " ⋯")
     end
     @assert length(chain.model) == length(postwalk(chain.model[1]))

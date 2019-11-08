@@ -3,6 +3,12 @@
 # * should evaluate numerical accurracy in some way
 # * would prefer to have more tests
 
+# @time set!(d)
+#   0.000061 seconds (47 allocations: 4.188 KiB)
+# type union in ModelNode does not cause drop in efficiency
+# should perhaps develop a type hierarchy to replace the union, but small type
+# unions are no real issue https://julialang.org/blog/2018/08/union-splitting
+
 # BelugaNode/ModelNode
 # ====================
 # would we lose efficiency if we use θ::Dict{Symbol,Union{T,Vector{T}}}?
@@ -13,11 +19,20 @@
     kind::Symbol               # fake node type, for manual dispatch
 end
 
-const ModelNode{T} = TreeNode{BelugaNode{T}} where T
+# branch instead of node rates
+@with_kw mutable struct BelugaBranch{T}
+    θ::Dict{Symbol,T}          # parameter vector (λ, μ, q, η, [κ])
+    ϵ::Vector{T} = ones(T, 2)  # extinction probabilities
+    W::Matrix{T}               # transition probability matrix
+    kind::Symbol               # fake node type, for manual dispatch
+end
+
+const ModelNode{T} = Union{TreeNode{BelugaNode{T}},TreeNode{BelugaBranch{T}}} where T
 
 Base.setindex!(n::ModelNode{T}, v::T, s::Symbol) where T = n.x.θ[s] = v
 Base.getindex(n::ModelNode, s::Symbol) = n.x.θ[s]
 Base.getindex(n::ModelNode, args::Symbol...) = [n.x.θ[s] for s in args]
+Base.eltype(n::TreeNode{T}) where T = T
 
 iswgd(n::ModelNode) = n.x.kind == :wgd
 iswgdafter(n::ModelNode) = n.x.kind == :wgdafter
@@ -26,12 +41,14 @@ issp(n::ModelNode) = n.x.kind == :sp
 gete(n::ModelNode, i::Int64) = n.x.ϵ[i]
 getw(n::ModelNode, i::Int64, j::Int64) = n.x.W[i,j]
 
-function update!(n::ModelNode)
+function update!(n::TreeNode{BelugaNode{T}}) where T
     setbelow!(n)
     setabove!(n)
 end
 
-function update!(n::ModelNode{T}, θ::Symbol, v::T) where T<:Real
+update!(n::TreeNode{BelugaBranch{T}}) where T = setabove!(n)
+
+function update!(n::ModelNode{T}, θ::Symbol, v::T) where T
     n[θ] = v
     update!(n)
 end
@@ -44,19 +61,30 @@ function update!(n::ModelNode, θ::NamedTuple)
 end
 
 # Different node kinds (maybe we could use traits?)
-rootnode(η::T, λ::T, μ::T, m::Int64) where T<:Real = TreeNode(1,
-    BelugaNode{T}(θ=Dict(:t=>0.,:λ=>λ,:μ=>μ,:η=>η), W=zeros(m,m), kind=:root))
+rootnode(η::T, λ::T, μ::T, m::Int64, nt::Type) where T<:Real =
+    TreeNode(1, nt{T}(
+        θ=Dict(:t=>0.,:λ=>λ,:μ=>μ,:η=>η),
+        W=zeros(m,m),
+        kind=:root))
 
-speciationnode(i::Int64, p::ModelNode{T}, λ::T, μ::T, t::T) where T<:Real =
-    TreeNode(i, BelugaNode{T}(θ=Dict(:t=>t,:λ=>λ,:μ=>μ), W=zeros(size(p.x.W)),
+speciationnode(i::Int64, p::V, λ::T, μ::T, t::T) where {T<:Real,V<:ModelNode{T}} =
+    TreeNode(i, eltype(p)(
+        θ=Dict(:t=>t,:λ=>λ,:μ=>μ),
+        W=zeros(size(p.x.W)),
         kind=:sp), p)
 
 # alternatively we could hack WGDs by adding dimensions in ϵ and W
-wgdnode(i::Int64, p::ModelNode{T}, q::T, t::T,) where T<:Real = TreeNode(i,
-    BelugaNode{T}(θ=Dict(:t=>t,:q=>q), W=zeros(size(p.x.W)), kind=:wgd), p)
+wgdnode(i::Int64, p::V, q::T, t::T) where {T<:Real,V<:ModelNode{T}} =
+    TreeNode(i, eltype(p)(
+        θ=Dict(:t=>t,:q=>q),
+        W=zeros(size(p.x.W)),
+        kind=:wgd), p)
 
-wgdafternode(i::Int64, p::ModelNode{T}) where T<:Real = TreeNode(i,
-    BelugaNode{T}(θ=Dict(:t=>0.), W=zeros(size(p.x.W)), kind=:wgdafter), p)
+wgdafternode(i::Int64, p::V) where {T<:Real,V<:ModelNode{T}} =
+    TreeNode(i, eltype(p)(
+        θ=Dict(:t=>0.),
+        W=zeros(size(p.x.W)),
+        kind=:wgdafter), p)
 
 # assumes n is a wgdnode, returns n if not a wgd node
 function nonwgdparent(n::ModelNode)
@@ -71,7 +99,7 @@ end
 # Model
 # =====
 struct DuplicationLossWGDModel{T<:Real}
-    nodes ::Dict{Int64,ModelNode{T}}
+    nodes ::Dict{Int64,<:ModelNode{T}}
     leaves::Dict{Int64,Symbol}
 end
 
@@ -83,10 +111,11 @@ Base.getindex(d::DLWGD, i::Int64) = d.nodes[i]
 Base.getindex(d::DLWGD, i::Int64, s::Symbol) = d.nodes[i][s]
 ne(d::DLWGD) = 2*length(d.leaves) - 2  # number of edges ignoring WGDs
 
-function DuplicationLossWGDModel(nw::String, df::DataFrame, λ=1., μ=1., η=0.9)
+function DuplicationLossWGDModel(nw::String, df::DataFrame,
+        λ=1., μ=1., η=0.9, nt::Type=BelugaNode)
     @unpack t, l = readnw(nw)
     M, m = profile(t, l, df)
-    nodes, leaves = inittree(t, l, η, λ, μ, m)
+    nodes, leaves = inittree(t, l, η, λ, μ, m, nt)
     d = DuplicationLossWGDModel(nodes, leaves)
     set!(d)
     d, M
@@ -191,12 +220,13 @@ function reindex!(d::DLWGD, i::Int64)
     end
 end
 
-function inittree(t::TreeNode, l, η::T, λ::T, μ::T, m) where T<:Real
-    d = Dict{Int64,ModelNode{T}}()
+function inittree(t::TreeNode, l, η::T, λ::T, μ::T,
+        m::Int64, nt::Type) where T<:Real
+    d = Dict(1=>rootnode(η, λ, μ, m, nt))
     n = Dict{Int64,Symbol}()
     function walk(x, y)
         if isroot(x)
-            d[x.i] = x_ = rootnode(η, λ, μ, m)
+            x_ = d[1]
         else
             d[x.i] = x_ = speciationnode(x.i, y, λ, μ, x.x)
             push!(y, x_)
@@ -267,11 +297,16 @@ function setW!(n::ModelNode{T}) where T<:Real
     end
 end
 
-function getλμ(a, b)
+function getλμ(a::TreeNode{BelugaNode{T}}, b::TreeNode{BelugaNode{T}}) where T
     a = isawgd(a) ? nonwgdparent(a) : a
     b = isawgd(b) ? nonwgdchild(b)  : b
     # 0.5*(a[:λ, :μ] .+ b[:λ, :μ]) below is faster
     [(a[:λ]+b[:λ])/2., (a[:μ]+b[:μ])/2.]
+end
+
+function getλμ(a::TreeNode{BelugaBranch{T}}, b::TreeNode{BelugaBranch{T}}) where T
+    b = isawgd(b) ? nonwgdchild(b)  : b
+    [b[:λ], b[:μ]]
 end
 
 function branchrates(d::DLWGD)

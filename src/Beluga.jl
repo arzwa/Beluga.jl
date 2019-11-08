@@ -24,4 +24,5 @@ module Beluga
     export Profile, PArray, extend!, shrink!, set!, rev!
     export RevJumpChain, RevJumpPrior, move!, init!, trace!
     export move_addwgd!, move_rmwgd!, branchrates!
+    export IidRevJumpPrior, CoevolRevJumpPrior, BelugaBranch, BelugaNode
 end
