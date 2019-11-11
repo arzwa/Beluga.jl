@@ -10,10 +10,10 @@ const Proposals_ = Dict{Int64,Vector{ProposalKernel}}
 @with_kw mutable struct RevJumpChain{T<:Real,M<:RevJumpPrior}
     data ::PArray{T}
     model::DLWGD{T}
-    prior::M          = CoevolRevJumpPrior()
-    props::Proposals_ = Proposals_()
-    state::State      = State(:gen=>0, :logp=>NaN, :logπ=>NaN, :k=>0)
-    trace::DataFrame  = DataFrame()
+    prior::M            = CoevolRevJumpPrior()
+    props::Proposals_   = Proposals_()
+    state::State        = State(:gen=>0, :logp=>NaN, :logπ=>NaN, :k=>0)
+    trace::DataFrame    = DataFrame()
 end
 
 Base.vec(chain::RevJumpChain) = Vector(chain.trace[end,:])
@@ -55,8 +55,9 @@ function setprops!(props, model)
 end
 
 function trace!(chain)
-    @unpack state, trace = chain
-    chain.trace = vcat(trace, DataFrame(;sort(state)...), cols=:union)
+    @unpack state, trace, model = chain
+    chain.trace = vcat(trace, DataFrame(;sort(state)...,
+        :wgds=>tracewgds(chain)), cols=:union)
 end
 
 id(node::ModelNode, args::Symbol...) = [id(node, s) for s in args]
@@ -333,6 +334,8 @@ function move_addwgd!(chain)
         state[:logp] = l_
         state[:logπ] = p_
         state[:k] += 1
+        s = Symbol("k$(nonwgdchild(wgdnode).i)")
+        state[s] = haskey(state, s) ? state[s] + 1 : 1
         update!(state, wgdnode, :q)
         set!(data)
         props[wgdnode.i] = [AdaptiveUnitProposal() ; WgdProposals()]
@@ -366,6 +369,8 @@ function move_rmwgd!(chain)
         reindex!(chain.props, wgdnode.i+2)
         set!(data)
         setstate!(state, chain.model)
+        s = Symbol("k$(nonwgdchild(child).i)")
+        state[s] -= 1
         state[:logp] = l_
         state[:logπ] = p_
     else
@@ -453,7 +458,26 @@ function branchrates!(chain)
     end
 end
 
+#= for each branch trace the WGDs?
+As we're mostly interested in questions like, "what is the marginal posterior
+probability of 1 WGD on branch x?", It's perhaps best to trace WGDs as a dict-
+like structure {branch: (q, t), ...}?
+=#
+function tracewgds(chain)
+    @unpack model = chain
+    d = Dict{Int64,Array{Tuple}}()
+    for i in getwgds(model)
+        n = model.nodes[i]
+        c = nonwgdchild(n)
+        t = (n[:q], parentdist(c, n))
+        haskey(d, c.i) ? push!(d[c.i], t) : d[c.i] = [t]
+    end
+    d
+end
 
+
+# Custom Proposals
+# ================
 # Extension of AdaptiveMCMC lib, proposal moves for vectors [q, λ, μ]
 WgdProposals(ϵ=[1.0, 1.0, 1.0, 1.0], ti=25) = [AdaptiveUvProposal(
     kernel=Uniform(-e, e), tuneinterval=ti, move=m)

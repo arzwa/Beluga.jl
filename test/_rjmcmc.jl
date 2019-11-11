@@ -74,12 +74,12 @@ begin
     df = df[1:50,:]
     nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
     d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9, Beluga.BelugaBranch)
-    # p = Profile(y)
-    p = PArray()
+    p = Profile(y)
+    # p = PArray()
     prior = IidRevJumpPrior(
         Σ₀=[5 4.5 ; 4.5 5],
         X₀=MvNormal(log.([2,2]), I),
-        πK=Geometric(0.5),
+        πK=Geometric(0.1),
         πq=Beta(1,1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     init!(chain)
