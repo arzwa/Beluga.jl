@@ -60,9 +60,6 @@ function trace!(chain)
         :wgds=>tracewgds(chain)), cols=:union)
 end
 
-id(node::ModelNode, args::Symbol...) = [id(node, s) for s in args]
-id(node::ModelNode, s::Symbol) = Symbol("$s$(node.i)")
-
 function update!(state::State, node::ModelNode, args...)
     for s in args
         state[id(node, s)] = node[s]
@@ -178,7 +175,7 @@ end
 
 ro(x, d=3) = round(x, digits=d)
 ro(x::Missing) = NaN
-logmcmc(io::IO, df, n=9) = write(io, "↘ ", join(ro.(Vector(df[1:n])), ", "), " ⋯\n")
+logmcmc(io::IO, df, n=15) = write(io, "↘ ", join(ro.(Vector(df[1:n])), ", "), " ⋯\n")
 
 function move!(chain)
     @unpack model, prior = chain

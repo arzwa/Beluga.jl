@@ -437,3 +437,33 @@ function condition_oib(n::ModelNode{T}) where T<:Real
         return log1mexp(lr[1]) + log1mexp(lr[2])
     end
 end
+
+
+# Instantiate a model from a data frame row, assumes a base model to copy
+# **without** WGDs! (HACK: not elegant)
+function (m::DuplicationLossWGDModel)(row::DataFrameRow)
+    model = deepcopy(m)
+    for (i,n) in model.nodes
+        for (k,v) in n.x.θ
+            s = id(n, k)
+            s in names(row) ? n[k] = row[s] : nothing
+        end
+        update!(n)
+    end
+    for (k,v) in row[:wgds]
+        for wgd in v
+            insertwgd!(model, closestnode(model[k], wgd[2])..., wgd[1])
+        end
+    end
+    model
+end
+
+function closestnode(n, t)
+    t_ = t - n[:t]
+    while t_ > 0
+        t = t_
+        n = n.p
+        t_ -= n[:t]
+    end
+    n, t
+end
