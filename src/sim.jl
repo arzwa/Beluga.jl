@@ -1,3 +1,6 @@
+using Parameters
+import Beluga: ModelNode, iswgd, iswgdafter, getλμ
+
 # simulate data from a DLWGD instance
 @with_kw mutable struct GeneTreeNode
     t::Float64 = 0.
@@ -5,7 +8,10 @@
     kind::Symbol = :root
 end
 
-function simulate!(d::DLWGD)
+Base.rand(d::DLWGD) = DataFrame(sort(profile(simulate(d), d)))
+Base.rand(d::DLWGD, N::Int64) = vcat([rand(d) for i=1:N]...)
+
+function simulate(d::DLWGD)
     root, extant = initialize_sim(d[1])
     simulate_tree!(d[1], extant)
     for (i, n) in enumerate(prewalk(root)); n.i = i; end

@@ -5,8 +5,6 @@ using Beluga, PhyloTree
 df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
 df = df[1:50,:]
 nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
-ro(x, d=3) = round(x, digits=d)
-ro(x::Missing) = NaN
 
 # data
 begin
@@ -23,11 +21,14 @@ end
 # will always be accepted when it is not acccompanied by a change in parameters
 # it is therefore best not to do such a step every iteration?
 begin
-    d, y = DuplicationLossWGDModel(nw, df[1:2,:], exp(randn()), exp(randn()), 0.9)
-    p = PArray()
-    prior = RevJumpPrior(Σ₀=[100 0. ; 0. 100],
-                         X₀=MvNormal(log.([2,2]), I),
-                         πK=Geometric(0.1))
+    df = CSV.read("test/data/plants1-100.tsv", delim=",")
+    d, y = DuplicationLossWGDModel(nw, df[1:50,:], exp(randn()), exp(randn()), 0.9)
+    p = Profile(y)
+    prior = CoevolRevJumpPrior(
+        Σ₀=[100 0. ; 0. 100],
+        X₀=MvNormal(log.([2,2]), I),
+        πK=Poisson(5),
+        πη=Beta(3,1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     init!(chain)
 end
@@ -69,9 +70,10 @@ end
 
 # branch model
 begin
-    df = CSV.read("test/data/plants1-100.tsv", delim=",")
+    # df = CSV.read("test/data/plants1-100.tsv", delim=",")
     # df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
-    df = df[1:50,:]
+    df = CSV.read("../../rjumpwgd/data/sims/model1_8wgd_N=1000.csv", delim=",")
+    # df = df[1:50,:]
     nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
     d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9, Beluga.BelugaBranch)
     p = Profile(y)
@@ -80,17 +82,26 @@ begin
         Σ₀=[5 4.5 ; 4.5 5],
         X₀=MvNormal(log.([2,2]), I),
         πK=Geometric(0.1),
-        πq=Beta(1,1))
+        πq=Beta(1,1),
+        πη=0.9)
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     init!(chain)
 end
 
 
-for i=1:11000
+
+
+
+function mcmcmove!(chain)
     chain.state[:gen] += 1
     rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
     move!(chain)
     trace!(chain)
+end
+
+
+for i=1:11000
+    mcmcmove!(chain)
     if i%10 == 0
         println("↘ ", join(ro.(Vector(chain.trace[end,1:9])), ", "), " ⋯")
     end

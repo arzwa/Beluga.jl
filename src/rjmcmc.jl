@@ -163,8 +163,25 @@ end
 
 # Moves
 # =====
+function mcmc!(chain, n; trace=10, show=10)
+    for i=1:n
+        chain.state[:gen] += 1
+        rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
+        move!(chain)
+        i % trace == 0 ? trace!(chain) : nothing
+        if i % show == 0
+            logmcmc(stdout, last(chain.trace))
+            flush(stdout)
+        end
+    end
+end
+
+ro(x, d=3) = round(x, digits=d)
+ro(x::Missing) = NaN
+logmcmc(io::IO, df, n=9) = write(io, "↘ ", join(ro.(Vector(df[1:n])), ", "), " ⋯\n")
+
 function move!(chain)
-    @unpack model = chain
+    @unpack model, prior = chain
     for n in postwalk(model[1])
         if iswgdafter(n)
             continue
@@ -172,7 +189,7 @@ function move!(chain)
             move_wgdtime!(chain, n)
             move_wgdrates!(chain, n)
         else
-            if isroot(n)
+            if isroot(n) && !(typeof(prior.πη)<:Number)
                  move_root!(chain, n)
             end
             move_node!(chain, n)
