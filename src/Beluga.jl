@@ -17,6 +17,7 @@ module Beluga
     include("utils.jl")
     include("profile.jl")
     include("rjmcmc.jl")
+    include("sim.jl")
 
     export DuplicationLossWGDModel, DLWGD, logpdf, logpdf!, update!
     export insertwgd!, removewgd!, isawgd, iswgd, isroot, iswgdafter
