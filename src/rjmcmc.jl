@@ -160,7 +160,7 @@ end
 
 # Moves
 # =====
-function rjmcmc!(chain, n; trace=10, show=10)
+function rjmcmc!(chain, n; trace=1, show=10)
     for i=1:n
         chain.state[:gen] += 1
         rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
@@ -173,7 +173,7 @@ function rjmcmc!(chain, n; trace=10, show=10)
     end
 end
 
-function mcmc!(chain, n; trace=10, show=10)
+function mcmc!(chain, n; trace=1, show=10)
     for i=1:n
         chain.state[:gen] += 1
         move!(chain)
@@ -536,4 +536,53 @@ function wgdqλ(k::AdaptiveUvProposal, x::Vector{Float64})
     xp[2] -= r
     xp[1] = reflect(xp[1], 0., 1.)
     return xp, 0.
+end
+
+
+# Bayes factors
+# =============
+# Prior probabilities for # of WGDs on each branch
+function kbranch_prior(n, k, T, prior, kmax=100)
+    # NOTE approximate: kmax is the truncation bound for the # of WGDs in total
+    # k is the maximal number of WGDs on the branch of interest for which the
+    # prior should be computed
+    te = parentdist(n, nonwgdparent(n.p))
+    p = Dict(j=>0. for j=0:k)
+    for j=0:k
+        q = (te/T)^j
+        for i=0:kmax
+            p[j] += binomial(i, j)*q*(1. - (te/T))^(i-j)*pdf(prior, i)
+        end
+    end
+    p
+end
+
+function branch_bayesfactors(chain)
+    @unpack trace, model, prior = chain
+    branch_bayesfactors(trace, model, prior)
+end
+
+function branch_bayesfactors(trace::DataFrame, model::DLWGD, prior)
+    T = treelength(model)
+    for (i,n) in sort(model.nodes)
+        if isawgd(n); break; end
+        if !(Symbol("k$i") in names(trace)); continue; end
+        l = join(string.(Beluga.clade(model, n)), ",")
+        println("_"^55)
+        println("Node $i: ($l) ")
+        ps = freqmap(trace[Symbol("k$i")])
+        πs = kbranch_prior(n, maximum(keys(ps)), T, prior.πK)
+        bf = zeros(maximum(keys(ps)))
+        for k in 1:length(bf)
+            bf[k] = (ps[k]/ps[k-1])/(πs[k]/πs[k-1])
+            bfk = round(log10(bf[k]), digits=3)
+            pk = round.([ps[k], ps[k-1]], digits=3)
+            πk = round.([πs[k], πs[k-1]], digits=3)
+            print("→ $k vs. $(k-1) ")
+            print("log₁₀($(pk[1])/$(pk[2]) ÷ $(πk[1])/$(πk[2])) = $bfk")
+            bfk > 1/2 ? print(" *") : nothing
+            bfk > 1   ? print("*") : nothing
+            bfk > 2   ? print("*\n") : print("\n")
+        end
+    end
 end

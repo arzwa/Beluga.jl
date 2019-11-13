@@ -5,16 +5,26 @@ df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=","
 nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
 
 
-# simulations
-# choose some reasonable priors, and simulate random data sets from the prior?
+function set_randrates!(model, d)
+    for (i, n) in model.nodes
+        x = rand(d)
+        n[:λ] = exp(x[1])
+        n[:μ] = exp(x[2])
+        @show i, n[:λ, :μ]
+    end
+end
+
+
 begin
+    d = MvNormal(log.([2., 2.]), 0.1I)
     m, y = DuplicationLossWGDModel(nw, df[1:2,:], 2., 2., 0.9)
+    set_randrates!(m, d)
     p = PArray()
     σ = 1
     wgds = []
     for i=1:8
         n, t = Beluga.randpos(m)
-        q = rand()
+        q = rand(Beta(1.5,4))
         wgdnode = insertwgd!(m, n, t, q)
         child = nonwgdchild(wgdnode)
         push!(wgds, (child.i, Beluga.parentdist(child, wgdnode), q))

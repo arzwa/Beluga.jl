@@ -70,10 +70,10 @@ end
 
 # branch model
 begin
-    # df = CSV.read("test/data/plants1-100.tsv", delim=",")
+    df = CSV.read("test/data/plants1-100.tsv", delim=",")
     # df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
-    df = CSV.read("../../rjumpwgd/data/sims/model1_8wgd_N=1000.csv", delim=",")
-    # df = df[1:50,:]
+    # df = CSV.read("../../rjumpwgd/data/sims/model1_8wgd_N=1000.csv", delim=",")
+    df = df[1:20,:]
     nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
     d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9, Beluga.BelugaBranch)
     p = Profile(y)
@@ -87,7 +87,6 @@ begin
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     init!(chain)
 end
-
 
 
 

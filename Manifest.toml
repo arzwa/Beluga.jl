@@ -291,6 +291,12 @@ git-tree-sha1 = "2b29ed254586324366e43f4283880978e6956d1f"
 uuid = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
 version = "0.42.0"
 
+[[GSL]]
+deps = ["BinaryProvider", "Libdl", "Markdown"]
+git-tree-sha1 = "5412051557d2c0d5a76f8d4b6a9b849123fac892"
+uuid = "92c85e6c-cbff-5e0c-80f7-495c94daaecd"
+version = "0.6.0"
+
 [[GeometryTypes]]
 deps = ["ColorTypes", "FixedPointNumbers", "IterTools", "LinearAlgebra", "StaticArrays"]
 git-tree-sha1 = "4bf5706f3b9a2c5adbbc473c8c91582c1fa816a3"

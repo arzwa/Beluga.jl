@@ -32,6 +32,33 @@ function parentdist(n::ModelNode{T}, m::ModelNode{T}) where T<:Real
     return d
 end
 
+treelength(d::DLWGD) = sum([n[:t] for (i,n) in d.nodes])
 
 id(node::ModelNode, args::Symbol...) = [id(node, s) for s in args]
 id(node::ModelNode, s::Symbol) = Symbol("$s$(node.i)")
+
+
+# Trace utilities
+# ===============
+function freqmap(x)
+    c = countmap(x)
+    !haskey(c, 0) ? c[0] = 0 : nothing
+    haskey(c, missing) ? c[0] += c[missing] : nothing
+    delete!(c, missing)
+    N = sum(values(c))
+    d = Dict{Int64,Float64}()
+    for (k,v) in c
+        d[k] = v/N
+    end
+    d
+end
+
+function clade(d::DLWGD, n::TreeNode)
+    leaves = Symbol[]
+    for node in postwalk(n)
+        if isleaf(node)
+            push!(leaves, d.leaves[node.i])
+        end
+    end
+    leaves
+end
