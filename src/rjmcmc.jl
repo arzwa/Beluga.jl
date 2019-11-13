@@ -160,10 +160,22 @@ end
 
 # Moves
 # =====
-function mcmc!(chain, n; trace=10, show=10)
+function rjmcmc!(chain, n; trace=10, show=10)
     for i=1:n
         chain.state[:gen] += 1
         rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
+        move!(chain)
+        i % trace == 0 ? trace!(chain) : nothing
+        if i % show == 0
+            logmcmc(stdout, last(chain.trace))
+            flush(stdout)
+        end
+    end
+end
+
+function mcmc!(chain, n; trace=10, show=10)
+    for i=1:n
+        chain.state[:gen] += 1
         move!(chain)
         i % trace == 0 ? trace!(chain) : nothing
         if i % show == 0
