@@ -65,7 +65,7 @@ clade1 = [:bvu, :sly, :ugi, :cqu]
 
 # base model and rates Distributions
 m, y = DuplicationLossWGDModel(nw, df[1:2,:], 2., 2., 0.9, BelugaBranch)
-params = (r=2, σ=2, σ0=1, qa=1, qb=1, ηa=5, ηb=1, pk=0.2, N=10, n=100, burnin=20)
+params = (r=2, σ=2, σ0=1, qa=1, qb=1, ηa=5, ηb=1, pk=0.2, N=100, n=1000, burnin=200)
 
 @unpack r, σ, σ0, ηa, ηb, qa, qb, pk, N, n, burnin = params
 
