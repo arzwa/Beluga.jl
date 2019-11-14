@@ -121,6 +121,15 @@ function DuplicationLossWGDModel(nw::String, df::DataFrame,
     d, M
 end
 
+function setrates!(model::DLWGD{T}, x::Matrix{T}) where T
+    for (i, n) in sort(model.nodes)
+        if isawgd(n) ; break ; end
+        n[:λ] = x[1, n.i]
+        n[:μ] = x[2, n.i]
+    end
+    set!(model)
+end
+
 function logpdf(d::DLWGD, x::Vector{Int64})
     L = csuros_miklos(x, d[1])
     l = integrate_root(L[:,1], d[1])

@@ -542,47 +542,65 @@ end
 # Bayes factors
 # =============
 # Prior probabilities for # of WGDs on each branch
-function kbranch_prior(n, k, T, prior, kmax=100)
-    # NOTE approximate: kmax is the truncation bound for the # of WGDs in total
-    # k is the maximal number of WGDs on the branch of interest for which the
-    # prior should be computed
-    te = parentdist(n, nonwgdparent(n.p))
-    p = Dict(j=>0. for j=0:k)
-    for j=0:k
-        q = (te/T)^j
-        for i=0:kmax
-            p[j] += binomial(i, j)*q*(1. - (te/T))^(i-j)*pdf(prior, i)
-        end
-    end
-    p
+# function kbranch_prior(n, k, T, prior, kmax=100)
+#     # NOTE approximate: kmax is the truncation bound for the # of WGDs in total
+#     # k is the maximal number of WGDs on the branch of interest for which the
+#     # prior should be computed
+#     te = parentdist(n, nonwgdparent(n.p))
+#     p = Dict(j=>0. for j=0:k)
+#     for j=0:k
+#         q = (te/T)^j
+#         for i=0:kmax
+#             p[j] += binomial(i, j)*q*(1. - (te/T))^(i-j)*pdf(prior, i)
+#         end
+#     end
+#     p
+# end
+
+# closed form
+function kbranch_prior(k, t, T, p)
+    a = t/T
+    b = 1. - t/T
+    q = 1. - p
+    p * (a*q)^k * (1. - b*q)^(-k-1)
 end
 
 function branch_bayesfactors(chain)
     @unpack trace, model, prior = chain
-    branch_bayesfactors(trace, model, prior)
+    branch_bayesfactors(trace, model, prior.πK.p)
 end
 
-function branch_bayesfactors(trace::DataFrame, model::DLWGD, prior)
+"""
+    branch_bayesfactors(trace::DataFrame, model::DLWGD, p::Float64)
+
+Compute Bayes Factors for all branch WGD configurations. Returns a data frame
+that is more or less self-explanatory.
+"""
+function branch_bayesfactors(trace::DataFrame, model::DLWGD, p::Float64)
     T = treelength(model)
+    df = DataFrame()
     for (i,n) in sort(model.nodes)
         if isawgd(n); break; end
         if !(Symbol("k$i") in names(trace)); continue; end
-        l = join(string.(Beluga.clade(model, n)), ",")
-        println("_"^55)
-        println("Node $i: ($l) ")
-        ps = freqmap(trace[Symbol("k$i")])
-        πs = kbranch_prior(n, maximum(keys(ps)), T, prior.πK)
-        bf = zeros(maximum(keys(ps)))
-        for k in 1:length(bf)
-            bf[k] = (ps[k]/ps[k-1])/(πs[k]/πs[k-1])
-            bfk = round(log10(bf[k]), digits=3)
-            pk = round.([ps[k], ps[k-1]], digits=3)
-            πk = round.([πs[k], πs[k-1]], digits=3)
-            print("→ $k vs. $(k-1) ")
-            print("log₁₀($(pk[1])/$(pk[2]) ÷ $(πk[1])/$(πk[2])) = $bfk")
-            bfk > 1/2 ? print(" *") : nothing
-            bfk > 1   ? print("*") : nothing
-            bfk > 2   ? print("*\n") : print("\n")
-        end
+        fmap = freqmap(trace[Symbol("k$i")])
+        kmax = maximum(keys(fmap))
+        te = parentdist(n, nonwgdparent(n.p))
+        ps = [haskey(fmap, i) ? fmap[i] : 0. for i in 0:kmax]
+        πs = kbranch_prior.(0:kmax, te, T, p)
+        cl = Beluga.clade(model, n)
+        df_ = DataFrame(:branch=>i,
+            :clade=>repeat([cl], kmax+1),
+            :k=>0:kmax, :eval=>"",
+            :p1=>ps, :p0=>[NaN ; ps[1:end-1]],
+            :π1=>πs, :π0=>[NaN ; πs[1:end-1]],
+            :t=>te, :tfrac=>te/T)
+        df = vcat(df, df_)
     end
+    # compute BFs
+    df[:K] = (df[:p1] ./ df[:p0]) ./ (df[:π1] ./ df[:π0])
+    df[:log10K] = log10.(df[:K])
+    for x in [0.5, 1., 2.]
+        df[:eval][df[:log10K] .> x] .*= "*"
+    end
+    df
 end
