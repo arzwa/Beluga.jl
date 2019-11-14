@@ -17,6 +17,7 @@ const Proposals_ = Dict{Int64,Vector{ProposalKernel}}
 end
 
 Base.vec(chain::RevJumpChain) = Vector(chain.trace[end,:])
+Base.rand(df::DataFrame) = df[rand(1:size(df)[1]),:]
 
 function init!(chain::RevJumpChain)
     @unpack data, model, prior, state, props = chain
@@ -83,7 +84,7 @@ logpdf(x::Real, y) = 0.
 end
 
 # one-pass prior computation based on the model
-function logpdf(prior::RevJumpPrior, d::DLWGD)
+function logpdf(prior::CoevolRevJumpPrior, d::DLWGD)
     @unpack Σ₀, X₀, πη, πq, πK = prior
     p = 0.; M = 2; J = 1.; k = 0
     N = ne(d)
@@ -116,6 +117,32 @@ function logp_pics(Σ₀, θ)
     @unpack J, A, q, n = θ
     # in our case the Jacobian is a constant (tree and times are fixed)
     log(J) + (q/2)*log(det(Σ₀)) - ((q + n)/2)*log(det(Σ₀ + A))
+end
+
+function Base.rand(prior::CoevolRevJumpPrior, d::DLWGD)
+    @unpack Σ₀, X₀, πη, πq, πK = prior
+    model = deepcopy(d)
+    Σ = rand(InverseWishart(3, Σ₀))
+    for n in prewalk(model[1])
+        if iswgdafter(n)
+            continue
+        elseif iswgd(n)
+            n[:q] = rand(πq)
+        elseif isroot(n)
+            n[:η] = rand(πη)
+            r = exp.(rand(X₀))
+            n[:λ] = r[1]
+            n[:μ] = r[2]
+        else
+            θp = log.(nonwgdparent(n.p)[:λ, :μ])
+            t = parentdist(n, nonwgdparent(n.p))
+            θ = exp.(rand(MvNormal(θp, Σ*t)))
+            n[:λ] = θ[1]
+            n[:μ] = θ[2]
+        end
+    end
+    set!(model)
+    return (model=model, Σ=Σ)
 end
 
 
@@ -410,39 +437,6 @@ function move_rmwgd!(chain)
     end
 end
 
-
-# This doesn't seem to be working
-# function move_rmwgd!(chain)
-#     @unpack data, state, model, props, prior = chain
-#     if nwgd(chain.model) == 0
-#         return
-#     end
-#     _model = deepcopy(chain.model)
-#     wgdnode = randwgd(chain.model)
-#     child = removewgd!(chain.model, wgdnode)
-#     @show child.p
-#     @show child
-#     length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)
-#     l_ = logpdf!(child, data)
-#     p_ = logpdf(prior, chain.model)
-#     hr = l_ + p_ - state[:logp] - state[:logπ]
-#     if log(rand()) < hr
-#         println("removal")
-#         # upon acceptance; shrink and reindex
-#         delete!(props, wgdnode.i)
-#         delete!(state, id(wgdnode, :q))
-#         reindex!(chain.props, wgdnode.i+2)
-#         set!(data)
-#         state[:logp] = l_
-#         state[:logπ] = p_
-#         state[:k] -= 1
-#     else
-#         chain.model = _model
-#         rev!(data)
-#     end
-# end
-
-
 function randpos(model)
     l = length(model)
     v = zeros(l)
@@ -482,6 +476,35 @@ function branchrates!(chain)
         trace[Symbol("l$i")] = l
         trace[Symbol("m$i")] = m
     end
+end
+
+function posterior_Σ!(chain::RevJumpChain{Float64,IidRevJumpPrior}, model::DLWGD)
+    @unpack Σ₀ = chain.prior
+    chain.trace[:var] = NaN
+    chain.trace[:cov] = NaN
+    for row in eachrow(chain.trace)
+        m = model(row)
+        @unpack A, q, n = get_scattermat_iid(m)
+        Σ = rand(InverseWishart(q + n, Σ₀ + A))
+        row[:var] = Σ[1,1]
+        row[:cov] = Σ[1,2]
+    end
+end
+
+function get_scattermat_iid(d::DLWGD)
+    N = ne(d); M = 2
+    Y = zeros(N, M)
+    A = zeros(M, M)
+    X0 = log.(d[1][:λ, :μ])
+    for (i, n) in d.nodes
+        if isawgd(n) || isroot(n)
+            continue
+        else
+            Y[i-1,:] = log.(n[:λ, :μ]) - X0
+            A += Y[i-1,:]*Y[i-1,:]'
+        end
+    end
+    (A=A, Y=Y, q=M+1, n=N)
 end
 
 #= for each branch trace the WGDs?

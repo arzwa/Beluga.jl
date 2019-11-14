@@ -319,7 +319,7 @@ function getλμ(a::TreeNode{BelugaBranch{T}}, b::TreeNode{BelugaBranch{T}}) whe
 end
 
 function branchrates(d::DLWGD)
-    r = zeros(2, length(d))
+    r = zeros(2, ne(d)+1)
     r[:,1] = d[1][:λ, :μ]
     for (i,n) in d.nodes
         if issp(n)
@@ -452,6 +452,10 @@ end
 # **without** WGDs! (HACK: not elegant)
 function (m::DuplicationLossWGDModel)(row::DataFrameRow)
     model = deepcopy(m)
+    for i in getwgds(model)
+        @show i
+        removewgd!(model, model[i])
+    end
     for (i,n) in model.nodes
         for (k,v) in n.x.θ
             s = id(n, k)
