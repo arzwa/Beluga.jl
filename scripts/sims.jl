@@ -2,8 +2,9 @@ using Pkg; Pkg.activate("/home/arzwa/julia-dev/Beluga/")
 using Test, DataFrames, CSV, Distributions, LinearAlgebra
 using Beluga, PhyloTree, Parameters, DrWatson
 
-
-function randmodel(m, prior)
+# NOTE: stuff is confusing by having BelugaBranch and BelugaNode mixed, better
+# dispatch would be nice...
+function randmodel(m, prior::CoevolRevJumpPrior)
     model = deepcopy(m)
     k = rand(prior.πK)
     wgds = Dict()
@@ -13,8 +14,31 @@ function randmodel(m, prior)
         child = nonwgdchild(wgdnode)
         wgds[wgdnode.i] = (n.i, t)
     end
+    # sample from coevol prior
     @unpack model, Σ = rand(prior, model)
-    (model=model, Σ=Σ, rates=Beluga.branchrates(model), wgds=wgds)
+    # get branch rates
+    rates = Beluga.branchrates(model)
+    Beluga.setrates!(model, rates)
+    (model=model, Σ=Σ, η=model[1][:η], rates=rates, wgds=wgds)
+end
+
+function randmodel(m, prior::IidRevJumpPrior)
+    model = deepcopy(m)
+    model[1][:η] = rand(prior.πη)
+    k = rand(prior.πK)
+    wgds = Dict()
+    for i=1:k
+        n, t = Beluga.randpos(model)
+        wgdnode = insertwgd!(model, n, t, rand(prior.πq))
+        child = nonwgdchild(wgdnode)
+        wgds[wgdnode.i] = (n.i, t)
+    end
+    # sample from coevol prior
+    Σ = rand(InverseWishart(3, prior.Σ₀))
+    X = rand(prior.X₀)
+    rates = exp.(rand(MvNormal(X, Σ), Beluga.ne(m)+1))
+    Beluga.setrates!(model, rates)
+    (model=model, Σ=Σ, η=model[1][:η], rates=rates, wgds=wgds)
 end
 
 function simulate(m, N, clade1)
@@ -25,8 +49,8 @@ function simulate(m, N, clade1)
     df[1:N,:]
 end
 
-function inference(m, nw, df, wgds, prior, n=6000)
-    model, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9)
+function inference(nw, df, wgds, prior, n=6000, nt=BelugaBranch)
+    model, y = DuplicationLossWGDModel(nw, df, 1., 1., 0.9, nt)
     data = Profile(y)
     chain = RevJumpChain(data=data, model=deepcopy(model), prior=prior)
     for (i, wgd) in sort(wgds)
@@ -40,12 +64,12 @@ function inference(m, nw, df, wgds, prior, n=6000)
 end
 
 function output(chain, x, burnin=1000)
-    @unpack model, rates, wgds, Σ = x
+    @unpack model, rates, wgds, Σ, η = x
     trace = chain.trace[burnin:end,:]
     qs = Dict(Symbol("q$i")=>model[i][:q] for (i,wgd) in sort(wgds))
     λs = Dict(Symbol("λ$i")=>rates[1,i] for i in 1:size(rates)[2])
     μs = Dict(Symbol("μ$i")=>rates[1,i] for i in 1:size(rates)[2])
-    ss = Dict(:var=>Σ[1,1], :cov=>Σ[1,2])
+    ss = Dict(:var=>Σ[1,1], :cov=>Σ[1,2], :η1=>η)
     d = merge(qs, λs, μs, ss)
     df = DataFrame(:variable=>collect(keys(sort(d))),
         :trueval=>collect(values(sort(d))))
@@ -59,17 +83,23 @@ end
 
 
 # script
-df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
-nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
+nw = open("test/data/plants2.nw", "r") do f ; readline(f); end
 clade1 = [:bvu, :sly, :ugi, :cqu]
 
 # base model and rates Distributions
-m, y = DuplicationLossWGDModel(nw, df[1:2,:], 2., 2., 0.9, BelugaBranch)
-params = (r=2, σ=2, σ0=1, qa=1, qb=1, ηa=5, ηb=1, pk=0.2, N=100, n=1000, burnin=200)
+m = DuplicationLossWGDModel(nw, 2., 2., 0.9, BelugaBranch)
+params = (r=2, σ=0.1, σ0=1, qa=1, qb=1, ηa=5, ηb=1, pk=0.2, N=20, n=2000, burnin=200)
 
 @unpack r, σ, σ0, ηa, ηb, qa, qb, pk, N, n, burnin = params
 
-simprior = CoevolRevJumpPrior(
+simprior1 = CoevolRevJumpPrior(
+    Σ₀=[σ 0.75σ ; 0.75σ σ],
+    X₀=MvNormal(log.([r,r]), [σ0 0.95σ0 ; 0.95σ0 σ0]),
+    πq=Beta(qa,qb),
+    πη=Beta(ηa,ηb),
+    πK=Geometric(pk))
+
+simprior2 = IidRevJumpPrior(
     Σ₀=[σ 0.75σ ; 0.75σ σ],
     X₀=MvNormal(log.([r,r]), [σ0 0.95σ0 ; 0.95σ0 σ0]),
     πq=Beta(qa,qb),
@@ -82,8 +112,8 @@ infprior = IidRevJumpPrior(
     πq=Beta(1,1),
     πη=Beta(3,1))
 
-x = randmodel(m, simprior)
+x = randmodel(m, simprior2)
 d = simulate(x.model, N, clade1)
-c = inference(x.model, nw, d, x.wgds, infprior, n)
+c = inference(nw, d, x.wgds, infprior, n)
 out = output(c, x, burnin)
 # CSV.write("$(savename(params)).$(ARGS[1]).csv", out)

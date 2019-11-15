@@ -111,14 +111,21 @@ Base.getindex(d::DLWGD, i::Int64) = d.nodes[i]
 Base.getindex(d::DLWGD, i::Int64, s::Symbol) = d.nodes[i][s]
 ne(d::DLWGD) = 2*length(d.leaves) - 2  # number of edges ignoring WGDs
 
-function DuplicationLossWGDModel(nw::String, df::DataFrame,
-        λ=1., μ=1., η=0.9, nt::Type=BelugaNode)
+function DuplicationLossWGDModel(nw::String, df::DataFrame, λ, μ, η,
+        nt::Type=BelugaNode)
     @unpack t, l = readnw(nw)
     M, m = profile(t, l, df)
-    nodes, leaves = inittree(t, l, η, λ, μ, m, nt)
-    d = DuplicationLossWGDModel(nodes, leaves)
+    d = DuplicationLossWGDModel(inittree(t, l, η, λ, μ, max(3,m), nt)...)
     set!(d)
     d, M
+end
+
+function DuplicationLossWGDModel(nw::String, λ, μ, η, nt::Type=BelugaNode)
+    @unpack t, l = readnw(nw)
+    d = DuplicationLossWGDModel(inittree(t, l, η, λ, μ, 3, nt)...)
+    # NOTE: m should be >= 3, otherwise WGD model breaks
+    set!(d)
+    d
 end
 
 function setrates!(model::DLWGD{T}, x::Matrix{T}) where T
