@@ -9,6 +9,7 @@ module Beluga
     using StatsBase
     using AdaptiveMCMC
     using LinearAlgebra
+    using MCMCChains
 
     import Distributions: logpdf, logpdf!
     import AdaptiveMCMC: ProposalKernel

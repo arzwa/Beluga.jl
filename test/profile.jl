@@ -24,7 +24,7 @@ shouldbe1 = [-1296.1763022581217, -1408.4459849625102, -1172.356609929616, -1197
 end
 
 
-@testset "Profile DL model, full loglikelihood" begin
+@testset "Profile DL model, extending and shrinking" begin
     # test data based on previous Beluga implementation
     λ = [0.56, 0.97, 0.12, 0.21, 4.23, 0.12, 0.77, 2.01, 2.99, 0.44]
     μ = [0.64, 0.36, 0.25, 0.57, 0.42, 0.49, 0.61, 0.69, 3.92, 0.53]
@@ -50,7 +50,7 @@ end
                 logpdf!(child, p)
             end
         end
-        @show length(d), length(postwalk(d[1]))
+        # @show length(d), length(postwalk(d[1]))
         l = logpdf!(d, p)
         @test shouldbe1[i] ≈ l
     end

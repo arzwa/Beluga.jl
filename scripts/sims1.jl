@@ -1,6 +1,11 @@
+# These are simulations to evaluate the MCMC algorithm without reversible jump
+# We simulate from either an IR or BM prior, perform inference under a second
+# prior configuration and compare summary stats (mean, geometric mean,
+# quantiles, etc.)
 using Pkg; Pkg.activate("/home/arzwa/julia-dev/Beluga/")
 using Test, DataFrames, CSV, Distributions, LinearAlgebra
 using Beluga, PhyloTree, Parameters, DrWatson
+
 
 # NOTE: stuff is confusing by having BelugaBranch and BelugaNode mixed, better
 # dispatch would be nice...
@@ -74,9 +79,11 @@ function output(chain, x, burnin=1000)
     df = DataFrame(:variable=>collect(keys(sort(d))),
         :trueval=>collect(values(sort(d))))
     join(df, describe(trace,
-        :mean=>mean, :std=>std,
+        :mean=>mean, :gmean=>(x)->exp(mean(log.(x))),
+        :std =>std,  :gstd =>(x)->exp(std(log.(x))),
         :q025=>(x)->quantile(x, .025),
         :q05 =>(x)->quantile(x, .05),
+        :q50 =>(x)->quantile(x, .50),
         :q95 =>(x)->quantile(x, .95),
         :q975=>(x)->quantile(x, .975)), on=:variable)
 end
@@ -88,7 +95,7 @@ clade1 = [:bvu, :sly, :ugi, :cqu]
 
 # base model and rates Distributions
 m = DuplicationLossWGDModel(nw, 2., 2., 0.9, BelugaBranch)
-params = (r=2, σ=0.1, σ0=1, qa=1, qb=1, ηa=5, ηb=1, pk=0.2, N=20, n=2000, burnin=200)
+params = (r=2, σ=0.1, σ0=1, qa=1, qb=1, ηa=5, ηb=1, pk=0.2, N=10, n=5500, burnin=500)
 
 @unpack r, σ, σ0, ηa, ηb, qa, qb, pk, N, n, burnin = params
 

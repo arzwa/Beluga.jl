@@ -627,3 +627,16 @@ function branch_bayesfactors(trace::DataFrame, model::DLWGD, p::Float64)
     end
     df
 end
+
+# MCMCChains interface, diagnostics etc.
+function MCMCChains.Chains(trace::DataFrame, burnin=1000)
+    df = deletecols(trace, :wgds)
+    if size(df)[1] < burnin
+        @error "Trace not long enough to discard $burnin iterations as burn-in"
+    end
+    X = reshape(Matrix(df), (size(df)...,1))[burnin+1:end, 2:end, :]
+    return Chains(X, [string(x) for x in names(df)][2:end])
+end
+
+# get an MCMCChains chain (gives diagnostics etc.)
+MCMCChains.Chains(c::RevJumpChain, burnin=1000) = Chains(c.trace, burnin)
