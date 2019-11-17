@@ -590,7 +590,9 @@ end
 
 function branch_bayesfactors(chain)
     @unpack trace, model, prior = chain
-    branch_bayesfactors(trace, model, prior.πK.p)
+    df = branch_bayesfactors(trace, model, prior.πK.p)
+    show_bayesfactors(df)
+    df
 end
 
 """
@@ -626,6 +628,20 @@ function branch_bayesfactors(trace::DataFrame, model::DLWGD, p::Float64)
         df[:eval][df[:log10K] .> x] .*= "*"
     end
     df
+end
+
+function show_bayesfactors(df::DataFrame)
+    for d in groupby(df, :branch)
+        @printf "🌲 %2d: " d[:branch][1]
+        println("(", join(string.(d[:clade][1]), ","), ")")
+        for (i,r) in enumerate(eachrow(d))
+            isnan(r[:p0]) ? continue : nothing
+            @printf "[%2d vs. %2d] " i-1 i-2
+            @printf "K = (%.2f/%.2f) ÷ (%.2f/%.2f) " r[:p1] r[:p0] r[:π1] r[:π0]
+            @printf "= %8.3f [log₁₀(K) = %8.3f] %s\n" r[:K] r[:log10K] r[:eval]
+        end
+        println("_"^78)
+    end
 end
 
 # MCMCChains interface, diagnostics etc.

@@ -78,7 +78,7 @@ function output(chain, x, burnin=1000)
     d = merge(qs, λs, μs, ss)
     df = DataFrame(:variable=>collect(keys(sort(d))),
         :trueval=>collect(values(sort(d))))
-    join(df, describe(trace,
+    df = join(df, describe(trace,
         :mean=>mean, :gmean=>(x)->exp(mean(log.(x))),
         :std =>std,  :gstd =>(x)->exp(std(log.(x))),
         :q025=>(x)->quantile(x, .025),
@@ -86,6 +86,8 @@ function output(chain, x, burnin=1000)
         :q50 =>(x)->quantile(x, .50),
         :q95 =>(x)->quantile(x, .95),
         :q975=>(x)->quantile(x, .975)), on=:variable)
+    df[:gmean][isnothing.(df[:gmean])] .= NaN
+    df[:gstd][ isnothing.(df[:gstd])]  .= NaN
 end
 
 

@@ -10,6 +10,7 @@ module Beluga
     using AdaptiveMCMC
     using LinearAlgebra
     using MCMCChains
+    using Printf
 
     import Distributions: logpdf, logpdf!
     import AdaptiveMCMC: ProposalKernel
