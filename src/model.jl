@@ -98,7 +98,9 @@ end
 
 # Model
 # =====
-struct DuplicationLossWGDModel{T<:Real}
+abstract type PhyloBDPModel{T} end
+
+struct DuplicationLossWGDModel{T<:Real} <: PhyloBDPModel{T}
     nodes ::Dict{Int64,<:ModelNode{T}}
     leaves::Dict{Int64,Symbol}
 end

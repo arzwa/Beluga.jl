@@ -1,6 +1,7 @@
 # NOTE:
 # * update! will be faster than using a deepcopy of the model
 # * initial implementation, hardcoded for only two correlated characters
+# * should we implement a discrete Gamma mixture? But that's tricky...
 
 abstract type Model end
 abstract type RevJumpPrior <: Model end
@@ -212,9 +213,8 @@ function mcmc!(chain, n; trace=1, show=10)
     end
 end
 
-ro(x, d=3) = round(x, digits=d)
-ro(x::Missing) = NaN
-logmcmc(io::IO, df, n=15) = write(io, "↘ ", join(ro.(Vector(df[1:n])), ", "), " ⋯\n")
+logmcmc(io::IO, df, n=15) = write(io, "🐋 ", join([@sprintf("%d,%d",df[1:2]...);
+    [@sprintf("%6.3f", x) for x in Vector(df[3:n])]], ","), " ⋯\n")
 
 function move!(chain)
     @unpack model, prior = chain
