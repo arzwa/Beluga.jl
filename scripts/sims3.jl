@@ -73,7 +73,10 @@ clade1 = [:bvu, :sly, :ugi, :cqu]
 
 # base model and rates Distributions
 m = DuplicationLossWGDModel(nw, 2., 2., 0.9, BelugaBranch)
-params = (r=1, σ=0.1, cv=0.95, σ0=1, qa=1, qb=1, ηa=5, ηb=1, pk=0.2, N=10, n=5500, burnin=500)
+
+params = (r=1, σ=0.1, cv=0.95, σ0=1,
+    qa=1, qb=1, ηa=5, ηb=1,
+    pk=0.2, N=10, n=5500, burnin=500)
 
 @unpack r, σ, cv, σ0, ηa, ηb, qa, qb, pk, N, n, burnin = params
 
@@ -94,7 +97,7 @@ x = randmodel(m, simprior)
 d = simulate(x.model, N, clade1)
 c = inference(nw, d, x.wgds, infprior, n)
 out = output(c, x, burnin)
-# compare WGD inference with WGD config
+
 bfs = branch_bayesfactors(chain)
 CSV.write("$(savename(params)).$(ARGS[1]).csv", out)
 CSV.write("$(savename(params)).$(ARGS[1]).bfs.csv", out)

@@ -213,8 +213,8 @@ function mcmc!(chain, n; trace=1, show=10)
     end
 end
 
-logmcmc(io::IO, df, n=15) = write(io, "🐋 ", join([@sprintf("%d,%d",df[1:2]...);
-    [@sprintf("%6.3f", x) for x in Vector(df[3:n])]], ","), " ⋯\n")
+logmcmc(io::IO, df, n=15) = write(io, "", join([@sprintf("%d,%d",df[1:2]...);
+    [@sprintf("%6.3f", x) for x in Vector(df[3:n])]], ","), " ⋯\n| ")
 
 function move!(chain)
     @unpack model, prior = chain
