@@ -82,6 +82,7 @@ logpdf(x::Real, y) = 0.
     πη::Prior            = Beta(3., 0.33)
     πq::Prior            = Beta()
     πK::Prior            = Geometric(0.5)
+    @assert isposdef(Σ₀)
 end
 
 # one-pass prior computation based on the model
@@ -153,11 +154,12 @@ end
 # I guess we can also exploit conjugacy in an independent rates prior for
 # branch rates?
 @with_kw struct IidRevJumpPrior <: RevJumpPrior
-    Σ₀::Matrix{Float64} = [100 0. ; 0. 100]
+    Σ₀::Matrix{Float64} = [1 0. ; 0. 1]
     X₀::Prior = MvNormal([1.,1.])
     πη::Prior = Beta(3., 0.33)
     πq::Prior = Beta()
     πK::Prior = Geometric(0.5)
+     @assert isposdef(Σ₀)
 end
 
 function logpdf(prior::IidRevJumpPrior, d::DLWGD)
@@ -588,9 +590,10 @@ function kbranch_prior(k, t, T, p)
     p * (a*q)^k * (1. - b*q)^(-k-1)
 end
 
-function branch_bayesfactors(chain)
+function branch_bayesfactors(chain, burnin::Int64=1000)
     @unpack trace, model, prior = chain
-    df = branch_bayesfactors(trace, model, prior.πK.p)
+    trace_ = trace[burnin+1:end,:]
+    df = branch_bayesfactors(trace_, model, prior.πK.p)
     show_bayesfactors(df)
     df
 end
