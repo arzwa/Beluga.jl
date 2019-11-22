@@ -13,12 +13,13 @@ module Beluga
     using Printf
 
     import Distributions: logpdf, logpdf!
-    import AdaptiveMCMC: ProposalKernel
+    import AdaptiveMCMC: ProposalKernel, DecreaseλProposal
 
     include("model.jl")
     include("utils.jl")
     include("profile.jl")
     include("rjmcmc.jl")
+    include("moves.jl")
     include("sim.jl")
 
     export DuplicationLossWGDModel, DLWGD, logpdf, logpdf!, update!

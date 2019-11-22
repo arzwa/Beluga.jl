@@ -207,7 +207,7 @@ function insertwgd!(d::DLWGD{T}, n::ModelNode{T},
     n[:t] -= w[:t]
     d.nodes[w.i] = w
     d.nodes[a.i] = a
-    setabove!(n)
+    setabove!(nonwgdchild(n))
     return w
 end
 
@@ -226,7 +226,7 @@ function removewgd!(d::DLWGD, n::ModelNode, reindex::Bool=true)
     delete!(d.nodes, n.i)
     delete!(d.nodes, n.i+1)
     reindex ? reindex!(d, n.i+2) : nothing
-    setabove!(child)
+    setabove!(nonwgdchild(child))
     return child
 end
 
