@@ -1,4 +1,4 @@
-using Pkg; Pkg.activate("/home/arzwa/julia-dev/Beluga/")
+using Pkg; Pkg.activate("/home/arzwa/dev/Beluga/")
 using DataFrames, CSV, Distributions, LinearAlgebra
 using Beluga, PhyloTree, Parameters
 
@@ -11,11 +11,11 @@ begin
     prior = IidRevJumpPrior(
         Σ₀=[5 4.5 ; 4.5 5],
         X₀=MvNormal(log.([2,2]), I),
-        πK=Geometric(0.1),
+        πK=Geometric(0.25),
         πq=Beta(1,1),
         πη=Beta(3,1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     init!(chain)
 end
 
-rjmcmc!(chain, 11000, trace=1, show=10)
+rjmcmc!(chain, 21000, trace=1, show=10)

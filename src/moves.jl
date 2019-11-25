@@ -177,6 +177,7 @@ function move_addwgd!(chain::RevJumpChain{T,IidRevJumpPrior}) where T
     propλ = chain.props[0][3]
     λn    = child[:λ]
     q, _  = propq(0.)
+    # q = rand(chain.prior.πq)  # sample from prior (doesn't work that well)
     θ, _  = propλ(log(λn))
 
     child[:λ] = exp(θ)

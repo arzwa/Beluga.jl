@@ -20,14 +20,14 @@ end
 Base.vec(chain::RevJumpChain) = Vector(chain.trace[end,:])
 Base.rand(df::DataFrame) = df[rand(1:size(df)[1]),:]
 
-function init!(chain::RevJumpChain)
+function init!(chain::RevJumpChain; rjump=(0.2, 0.5))
     @unpack data, model, prior, state, props = chain
     setstate!(state, model)
     state[:logp] = logpdf!(model, data)
     state[:logπ] = logpdf(prior, model)
     trace!(chain)
     set!(data)
-    setprops!(props, model)
+    setprops!(props, model, rjump)
 end
 
 function setstate!(state, model)
@@ -41,15 +41,18 @@ function setstate!(state, model)
     state[:k] = K
 end
 
-function setprops!(props, model)
+function setprops!(props, model, rjump)
     for (i, n) in model.nodes
         if iswgdafter(n)
             continue
         elseif iswgd(n)
             props[i] = [AdaptiveUnitProposal(); WgdProposals()]
         elseif isroot(n)
-            props[0] = [AdaptiveUnitProposal(), AdaptiveUnitProposal(),
-                DecreaseλProposal()]
+            props[0] = [AdaptiveUnitProposal(),
+                AdaptiveUnitProposal(rjump[1], 10^10),
+                DecreaseλProposal(rjump[2], 10^10)]
+            # adapting one of the two might be a stable strategy, adapting
+            # the λ decrease to the q proposal
             props[i] = CoevolUnProposals()
         else
             props[i] = CoevolUnProposals()
@@ -191,10 +194,12 @@ end
 
 # Moves
 # =====
-function rjmcmc!(chain, n; trace=1, show=10)
+function rjmcmc!(chain, n; trace=1, show=10, rjstart=1000)
     for i=1:n
         chain.state[:gen] += 1
-        rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
+        if i > rjstart
+            rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
+        end
         move!(chain)
         i % trace == 0 ? trace!(chain) : nothing
         if i % show == 0

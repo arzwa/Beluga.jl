@@ -20,7 +20,7 @@ version = "1.0.0"
 
 [[AdaptiveMCMC]]
 deps = ["Distributions", "Parameters"]
-path = "/home/arzwa/julia-dev/AdaptiveMCMC/"
+path = "/home/arzwa/dev/AdaptiveMCMC/"
 uuid = "7599756a-d2e4-11e9-0d0e-31645f1f853c"
 version = "0.1.0"
 
@@ -488,7 +488,7 @@ version = "0.3.8"
 
 [[PhyloTree]]
 deps = ["DataStructures", "Memoize", "Parameters"]
-path = "/home/arzwa/julia-dev/PhyloTree/"
+path = "/home/arzwa/dev/PhyloTree/"
 uuid = "4d2bc6a4-f40f-11e9-35bb-6fd6bb7887c9"
 version = "0.1.0"
 
