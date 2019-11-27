@@ -11,11 +11,11 @@ begin
     prior = IidRevJumpPrior(
         Σ₀=[5 4.5 ; 4.5 5],
         X₀=MvNormal(log.([2,2]), I),
-        πK=Geometric(0.25),
+        πK=Beluga.UpperBoundedGeometric(0.5, 15),
         πq=Beta(1,1),
         πη=Beta(3,1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
-    init!(chain)
+    init!(chain, rjump=(1., 10., 0.01))
 end
 
-rjmcmc!(chain, 21000, trace=1, show=10)
+rjmcmc!(chain, 11000, trace=1, show=10)

@@ -20,7 +20,7 @@ end
 Base.vec(chain::RevJumpChain) = Vector(chain.trace[end,:])
 Base.rand(df::DataFrame) = df[rand(1:size(df)[1]),:]
 
-function init!(chain::RevJumpChain; rjump=(0.2, 0.5))
+function init!(chain::RevJumpChain; rjump=(1., 5., 0.5))
     @unpack data, model, prior, state, props = chain
     setstate!(state, model)
     state[:logp] = logpdf!(model, data)
@@ -49,8 +49,11 @@ function setprops!(props, model, rjump)
             props[i] = [AdaptiveUnitProposal(); WgdProposals()]
         elseif isroot(n)
             props[0] = [AdaptiveUnitProposal(),
-                AdaptiveUnitProposal(rjump[1], 10^10),
-                DecreaseλProposal(rjump[2], 10^10)]
+                AdaptiveUvProposal(
+                    kernel=Beta(rjump[1], rjump[2]),
+                    bounds=(0.,1.), tuneinterval=10^10, stop=0,
+                    move=AdaptiveMCMC.independent),
+                DecreaseλProposal(rjump[3], 10^10)]
             # adapting one of the two might be a stable strategy, adapting
             # the λ decrease to the q proposal
             props[i] = CoevolUnProposals()
@@ -163,7 +166,7 @@ end
     πη::Prior = Beta(3., 0.33)
     πq::Prior = Beta()
     πK::Prior = Geometric(0.5)
-     @assert isposdef(Σ₀)
+    @assert isposdef(Σ₀)
 end
 
 function logpdf(prior::IidRevJumpPrior, d::DLWGD)
@@ -192,9 +195,24 @@ function logpdf(prior::IidRevJumpPrior, d::DLWGD)
     p::Float64  # type stability not entirely optimal
 end
 
+struct UpperBoundedGeometric{T<:Real} <: DiscreteUnivariateDistribution
+    d::DiscreteNonParametric{Int64,T,UnitRange{Int64},Array{T,1}}
+    p::T
+    b::Int64
+    function UpperBoundedGeometric(p::T, bound::Int64) where T<:Real
+        xs = pdf.(Geometric(p), 0:bound)
+        ps = xs ./ sum(xs)
+        new{T}(DiscreteNonParametric(0:bound, ps), p, bound)
+    end
+end
+
+Base.rand(d::UpperBoundedGeometric) = rand(d.d)
+Distributions.pdf(d::UpperBoundedGeometric, x::Int64) = pdf(d.d, x)
+Distributions.logpdf(d::UpperBoundedGeometric, x::Int64) = logpdf(d.d, x)
+
 # Moves
 # =====
-function rjmcmc!(chain, n; trace=1, show=10, rjstart=1000)
+function rjmcmc!(chain, n; trace=1, show=10, rjstart=0)
     for i=1:n
         chain.state[:gen] += 1
         if i > rjstart

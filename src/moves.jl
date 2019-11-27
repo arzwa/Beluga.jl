@@ -166,11 +166,13 @@ function _move_addwgd!(chain::RevJumpChain{T,IidRevJumpPrior}) where T
     end
 end
 
-# TODO, experiment with making cross-model moves more efficient by incorporating
-# a decrease in λ
+
 function move_addwgd!(chain::RevJumpChain{T,IidRevJumpPrior}) where T
     # XXX unpack copies the model or something??
     @unpack data, state, model, props, prior = chain
+    if logpdf(prior.πK, nwgd(chain.model)+1) == -Inf
+        return
+    end
     n, t  = randpos(chain.model)
     child = nonwgdchild(n)
     propq = chain.props[0][2]

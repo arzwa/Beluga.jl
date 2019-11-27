@@ -29,5 +29,5 @@ module Beluga
     export RevJumpChain, RevJumpPrior, move!, init!, trace!
     export move_addwgd!, move_rmwgd!, branchrates!, mcmc!, rjmcmc!
     export IidRevJumpPrior, CoevolRevJumpPrior, BelugaBranch, BelugaNode
-    export branch_bayesfactors
+    export branch_bayesfactors, UpperBoundedGeometric
 end

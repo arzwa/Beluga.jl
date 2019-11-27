@@ -1,5 +1,5 @@
 using Distributed
-addprocs(2)
+# addprocs(2)
 @everywhere using Pkg
 @everywhere Pkg.activate("/home/arzwa/dev/Beluga/")
 @everywhere using Beluga, PhyloTree
@@ -16,19 +16,19 @@ begin
     df = CSV.read("test/data/plants1-100.tsv", delim=",")
     # df = CSV.read("test/data/N=250_tree=plants1c.nw_η=0.9_λ=2_μ=2.csv", delim=",")
     # df = CSV.read("../../rjumpwgd/data/sims/model1_8wgd_N=1000.csv", delim=",")
-    df = df[1:50,:]
+    df = df[1:20,:]
     nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
     d, y = DuplicationLossWGDModel(nw, df, exp(randn()), exp(randn()), 0.9, Beluga.BelugaBranch)
     p = Profile(y)
     # p = PArray()
     prior = IidRevJumpPrior(
-        Σ₀=[5 4.5 ; 4.5 5],
+        Σ₀=[1 0.9 ; 0.9 1],
         X₀=MvNormal(log.([2,2]), I),
-        πK=Geometric(0.2),
-        πq=Beta(1.5,2),
+        πK=Beluga.UpperBoundedGeometric(0.2, 15),
+        πq=Beta(1,1),
         πη=0.9)
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
-    init!(chain)
+    init!(chain, rjump=(1., 10., 0.01))
 end
 
 rjmcmc!(chain, 5500, show=10, trace=1)
