@@ -20,6 +20,29 @@ function move_node!(chain, n)
     end
 end
 
+# move when root rates are assumed equal
+function move_rootequal!(chain::RevJumpChain{T,IidRevJumpPrior}, n) where T
+    @unpack data, state, model, props, prior = chain
+    v = n[:λ]
+    prop = props[n.i][1]
+    w, r = prop(log(v))
+    update!(n, (λ=exp(w), μ=exp(w)))
+    l_ = logpdf!(n, data)
+    p_ = logpdf(prior, model)
+    hr = l_ + p_ - state[:logp] - state[:logπ] + r
+    # @show l_, p_, exp.(w), v
+    if log(rand()) < hr
+        update!(state, n, :λ, :μ)
+        state[:logp] = l_
+        state[:logπ] = p_
+        set!(data)
+        prop.accepted += 1
+    else
+        update!(n, (λ=v, μ=v))
+        rev!(data)
+    end
+end
+
 function move_root!(chain, n)
     @unpack data, state, model, props, prior = chain
     prop = props[0][1]

@@ -54,8 +54,7 @@ function setprops!(props, model, rjump)
                     bounds=(0.,1.), tuneinterval=10^10, stop=0,
                     move=AdaptiveMCMC.independent),
                 DecreaseλProposal(rjump[3], 10^10)]
-            # adapting one of the two might be a stable strategy, adapting
-            # the λ decrease to the q proposal
+            # they should be correlated, a large q with a strong decrease in λ
             props[i] = CoevolUnProposals()
         else
             props[i] = CoevolUnProposals()
@@ -162,7 +161,7 @@ end
 # branch rates?
 @with_kw struct IidRevJumpPrior <: RevJumpPrior
     Σ₀::Matrix{Float64} = [1 0. ; 0. 1]
-    X₀::Prior = MvNormal([1.,1.])
+    X₀::Prior = Normal()
     πη::Prior = Beta(3., 0.33)
     πq::Prior = Beta()
     πK::Prior = Geometric(0.5)
@@ -184,7 +183,7 @@ function logpdf(prior::IidRevJumpPrior, d::DLWGD)
             k += 1
         elseif isroot(n)
             p += logpdf(πη, n[:η])
-            p += logpdf(X₀, X0)
+            p += sum(logpdf.(X₀, X0))
         else
             Y[i-1,:] = log.(n[:λ, :μ]) - X0
             A += Y[i-1,:]*Y[i-1,:]'
@@ -210,7 +209,8 @@ Base.rand(d::UpperBoundedGeometric) = rand(d.d)
 Distributions.pdf(d::UpperBoundedGeometric, x::Int64) = pdf(d.d, x)
 Distributions.logpdf(d::UpperBoundedGeometric, x::Int64) = logpdf(d.d, x)
 
-# Moves
+
+# MCMC
 # =====
 function rjmcmc!(chain, n; trace=1, show=10, rjstart=0)
     for i=1:n
@@ -251,10 +251,12 @@ function move!(chain)
             move_wgdtime!(chain, n)
             move_wgdrates!(chain, n)
         else
-            if isroot(n) && !(typeof(prior.πη)<:Number)
-                 move_root!(chain, n)
+            if isroot(n)
+                 !(typeof(prior.πη)<:Number) ? move_root!(chain, n) : nothing
+                 move_rootequal!(chain, n)
+            else
+                move_node!(chain, n)
             end
-            move_node!(chain, n)
         end
     end
 end
@@ -340,12 +342,33 @@ function tracewgds(chain)
     for i in getwgds(model)
         n = model.nodes[i]
         c = nonwgdchild(n)
-        t = (n[:q], parentdist(c, n))
+        t = (parentdist(c, n), n[:q])
         haskey(d, c.i) ? push!(d[c.i], t) : d[c.i] = [t]
     end
     d
 end
 
+function get_wgdtrace(chain)
+    tr = Dict{Int64,Dict{Int64,DataFrame}}()
+    for d in chain.trace[:wgds]
+        for (k,v) in d
+            n = length(v)
+            if !haskey(tr, k)
+                tr[k] = Dict{Int64,DataFrame}()
+            end
+            if !haskey(tr[k], n)
+                tr[k][n] = DataFrame(
+                    [Symbol("q$i")=>Float64[] for i=1:n]...,
+                    [Symbol("t$i")=>Float64[] for i=1:n]...)
+            end
+            sort!(v)
+            t = [x[1] for x in v]
+            q = [x[2] for x in v]
+            push!(tr[k][n], [q ; t])
+        end
+    end
+    tr
+end
 
 # Custom Proposals
 # ================

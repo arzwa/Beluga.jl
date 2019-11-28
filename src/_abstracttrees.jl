@@ -7,6 +7,7 @@ Base.iterate(n::AbstractNode, args...) = iterate(n.children, args...)
 
 children(node::N) where N<:AbstractNode = node.children
 
+# this approach with Event is not easy (possible?) to get type stable...
 abstract type Event{T} end
 
 mutable struct Leaf{T} <: Event{T}
@@ -37,12 +38,12 @@ struct WGDAfter{T} <: Event{T} ; end
 
 const Event1{T} = Union{Speciation{T},Root{T},WGDAfter{T}}
 
-@with_kw mutable struct PhyloBDPNode{T} <: AbstractNode{T}
-    event   ::Event{T}
+@with_kw mutable struct PhyloBDPNode{T,E<:Event{T}} <: AbstractNode{T}
+    event   ::E
     expr    ::Vector{T} = zeros(Float64, 2)
     trpr    ::Matrix{T} = zeros(Float64, 0, 0)
-    parent  ::Union{PhyloBDPNode,Nothing} = nothing
-    children::Vector{PhyloBDPNode} = PhyloBDPNode[]
+    parent  ::Union{PhyloBDPNode{T,Event{T}},Nothing} = nothing
+    children::Vector{PhyloBDPNode{T,Event{T}}} = PhyloBDPNode{Float64,Event{Float64}}[]
 end
 
 setexpr!(n::PhyloBDPNode) = setexpr!(n, n.event)
