@@ -23,7 +23,7 @@ begin
     # p = PArray()
     prior = IidRevJumpPrior(
         Σ₀=[0.1 0.099 ; 0.099 0.1],
-        X₀=Normal(),
+        X₀=MvNormal([0., 0.], I),
         πK=Beluga.UpperBoundedGeometric(0.3, 15),
         πq=Beta(1,1),
         πη=0.9)

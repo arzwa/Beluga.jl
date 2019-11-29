@@ -20,7 +20,7 @@ end
 Base.vec(chain::RevJumpChain) = Vector(chain.trace[end,:])
 Base.rand(df::DataFrame) = df[rand(1:size(df)[1]),:]
 
-function init!(chain::RevJumpChain; rjump=(1., 5., 0.5))
+function init!(chain::RevJumpChain; rjump=(1., 10., 0.01))
     @unpack data, model, prior, state, props = chain
     setstate!(state, model)
     state[:logp] = logpdf!(model, data)
@@ -161,7 +161,7 @@ end
 # branch rates?
 @with_kw struct IidRevJumpPrior <: RevJumpPrior
     Σ₀::Matrix{Float64} = [1 0. ; 0. 1]
-    X₀::Prior = Normal()
+    X₀::Prior = MvNormal([0. 0.], I)
     πη::Prior = Beta(3., 0.33)
     πq::Prior = Beta()
     πK::Prior = Geometric(0.5)
@@ -183,7 +183,7 @@ function logpdf(prior::IidRevJumpPrior, d::DLWGD)
             k += 1
         elseif isroot(n)
             p += logpdf(πη, n[:η])
-            p += sum(logpdf.(X₀, X0))
+            p += logpdf(X₀, X0)
         else
             Y[i-1,:] = log.(n[:λ, :μ]) - X0
             A += Y[i-1,:]*Y[i-1,:]'
@@ -212,13 +212,13 @@ Distributions.logpdf(d::UpperBoundedGeometric, x::Int64) = logpdf(d.d, x)
 
 # MCMC
 # =====
-function rjmcmc!(chain, n; trace=1, show=10, rjstart=0)
+function rjmcmc!(chain, n; trace=1, show=10, rjstart=0, rootequal=false)
     for i=1:n
         chain.state[:gen] += 1
         if i > rjstart
             rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
         end
-        move!(chain)
+        move!(chain, rootequal=rootequal)
         i % trace == 0 ? trace!(chain) : nothing
         if i % show == 0
             logmcmc(stdout, last(chain.trace))
@@ -242,7 +242,7 @@ end
 logmcmc(io::IO, df, n=15) = write(io, "", join([@sprintf("%d,%d",df[1:2]...);
     [@sprintf("%6.3f", x) for x in Vector(df[3:n])]], ","), " ⋯\n| ")
 
-function move!(chain)
+function move!(chain; rootequal=false)
     @unpack model, prior = chain
     for n in postwalk(model[1])
         if iswgdafter(n)
@@ -252,8 +252,8 @@ function move!(chain)
             move_wgdrates!(chain, n)
         else
             if isroot(n)
-                 !(typeof(prior.πη)<:Number) ? move_root!(chain, n) : nothing
-                 move_rootequal!(chain, n)
+                !(typeof(prior.πη)<:Number) ? move_root!(chain, n) : nothing
+                rootequal ? move_rootequal!(chain, n) : move_node!(chain, n)
             else
                 move_node!(chain, n)
             end
@@ -350,7 +350,7 @@ end
 
 function get_wgdtrace(chain)
     tr = Dict{Int64,Dict{Int64,DataFrame}}()
-    for d in chain.trace[:wgds]
+    for d in chain.trace[!,:wgds]
         for (k,v) in d
             n = length(v)
             if !haskey(tr, k)
