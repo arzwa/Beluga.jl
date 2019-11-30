@@ -10,6 +10,10 @@ using Beluga, PhyloTree
 using Test, DataFrames, CSV, Distributions, LinearAlgebra
 # using Plots, StatsPlots
 
+df = CSV.read("test/data/plants1-100.tsv", delim=",")
+nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
+d, p = DLWGD(nw, df, 1., 1., 0.9, Branch)
+
 
 # branch model
 begin
@@ -18,9 +22,8 @@ begin
     # df = CSV.read("../../rjumpwgd/data/sims/model1_8wgd_N=1000.csv", delim=",")
     df = df[1:25,:]
     nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
-    d, y = DuplicationLossWGDModel(nw, df, 1., 1., 0.9, Beluga.BelugaBranch)
-    p = Profile(y)
-    # p = PArray()
+    d, p = DLWGD(nw, df, 1., 1., 0.9, Beluga.Branch)
+    # d, p = DLWGD(nw, 1., 1., 0.9, Beluga.Branch)
     prior = IidRevJumpPrior(
         Σ₀=[0.1 0.099 ; 0.099 0.1],
         X₀=MvNormal([0., 0.], I),

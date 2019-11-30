@@ -1,11 +1,12 @@
 # Profile
 # =======
-# NOTE not sure if really necessary to have the `xp` field, we could esaily
+# NOTE not sure if really necessary to have the `xp` field, we could easily
 # adapt the csuros-miklos algorithm to use the x of the `nonwgdchild` instead.
+
 # an alternative, that should be seriously looked at, is to use a dict of
 # vectors instead of a matrix
 
-abstract type AbstractProfile end
+abstract type AbstractProfile{T} end
 
 """
     Profile{T<:Real}
@@ -14,7 +15,7 @@ Struct for a phylogenetic profile of a single family. Geared towards MCMC
 applications (temporary storage fields) and parallel applications (using
 DArrays). See also `PArray`.
 """
-@with_kw mutable struct Profile{T<:Real} <: AbstractProfile
+@with_kw mutable struct Profile{T<:Real} <: AbstractProfile{T}
     x ::Vector{Int64}
     xp::Vector{Int64} = deepcopy(x)
     L ::Matrix{T}
@@ -22,20 +23,20 @@ DArrays). See also `PArray`.
 end
 
 const PArray{T} = DArray{Profile{T},1,Array{Profile{T},1}} where T<:Real
-PArray() = distribute([Profile()])
+PArray() = distribute([Profile(nothing)])
 
-Profile() = Profile(Int64[], Int64[], zeros(0,0), zeros(0,0))
+Profile(x::Nothing) = Profile(Int64[], Int64[], zeros(0,0), zeros(0,0))
 Profile(x::Vector{Int64}, n=length(x), m=maximum(x)+1) = Profile(x=x, L=minfs(Float64,m,n))
 Profile(X::Matrix{Int64}) = distribute([Profile(X[:,i]) for i=1:size(X)[2]])
 
 
-# TODO: the length hack is quite ugly, maybe nicer to have a type for empty
+# NOTE: the length hack is quite ugly, maybe nicer to have a type for empty
 # (mock) profiles [for sampling from the prior alone in MCMC applications]
 logpdf!(d::DLWGD, p::PArray) = length(p[1].x) == 0 ?
-    0. : mapreduce((x)->logpdf!(x.Lp, x.xp, d), +, p)
+    0. : mapreduce((x)->logpdf!(x.Lp, d, x.xp), +, p)
 
 logpdf!(n::ModelNode, p::PArray) = length(p[1].x) == 0 ?
-    0. : mapreduce((x)->logpdf!(x.Lp, x.xp, n), +, p)
+    0. : mapreduce((x)->logpdf!(x.Lp, n, x.xp), +, p)
 
 logpdfroot(n::ModelNode, p::PArray) = length(p[1].x) == 0 ?
     0. : mapreduce((x)->logpdfroot(x.Lp, n), +, p)

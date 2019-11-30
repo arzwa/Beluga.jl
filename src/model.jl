@@ -1,205 +1,98 @@
-# NOTE:
-# * generalize to incl
-# * should evaluate numerical accurracy in some way
-# * would prefer to have more tests
-
-# @time set!(d)
-#   0.000061 seconds (47 allocations: 4.188 KiB)
-# type union in ModelNode does not cause drop in efficiency
-# should perhaps develop a type hierarchy to replace the union, but small type
-# unions are no real issue https://julialang.org/blog/2018/08/union-splitting
-
-# BelugaNode/ModelNode
-# ====================
-# would we lose efficiency if we use θ::Dict{Symbol,Union{T,Vector{T}}}?
-@with_kw mutable struct BelugaNode{T}
-    θ::Dict{Symbol,T}          # parameter vector (λ, μ, q, η, [κ])
-    ϵ::Vector{T} = ones(T, 2)  # extinction probabilities
-    W::Matrix{T}               # transition probability matrix
-    kind::Symbol               # fake node type, for manual dispatch
-end
-
-# branch instead of node rates
-@with_kw mutable struct BelugaBranch{T}
-    θ::Dict{Symbol,T}          # parameter vector (λ, μ, q, η, [κ])
-    ϵ::Vector{T} = ones(T, 2)  # extinction probabilities
-    W::Matrix{T}               # transition probability matrix
-    kind::Symbol               # fake node type, for manual dispatch
-end
-
-const ModelNode{T} = Union{TreeNode{BelugaNode{T}},TreeNode{BelugaBranch{T}}} where T
-
-Base.setindex!(n::ModelNode{T}, v::T, s::Symbol) where T = n.x.θ[s] = v
-Base.getindex(n::ModelNode, s::Symbol) = n.x.θ[s]
-Base.getindex(n::ModelNode, args::Symbol...) = [n.x.θ[s] for s in args]
-Base.eltype(n::TreeNode{T}) where T = T
-
-iswgd(n::ModelNode) = n.x.kind == :wgd
-iswgdafter(n::ModelNode) = n.x.kind == :wgdafter
-isawgd(n::ModelNode) = iswgd(n) || iswgdafter(n)
-issp(n::ModelNode) = n.x.kind == :sp
-gete(n::ModelNode, i::Int64) = n.x.ϵ[i]
-getw(n::ModelNode, i::Int64, j::Int64) = n.x.W[i,j]
-
-function update!(n::TreeNode{BelugaNode{T}}) where T
-    setbelow!(n)
-    setabove!(n)
-end
-
-update!(n::TreeNode{BelugaBranch{T}}) where T = setabove!(n)
-
-function update!(n::ModelNode{T}, θ::Symbol, v::T) where T
-    n[θ] = v
-    update!(n)
-end
-
-function update!(n::ModelNode, θ::NamedTuple)
-    for (k, v) in pairs(θ)
-        n[k] = v
-    end
-    update!(n)
-end
-
-# Different node kinds (maybe we could use traits?)
-rootnode(η::T, λ::T, μ::T, m::Int64, nt::Type) where T<:Real =
-    TreeNode(1, nt{T}(
-        θ=Dict(:t=>0.,:λ=>λ,:μ=>μ,:η=>η),
-        W=zeros(m,m),
-        kind=:root))
-
-speciationnode(i::Int64, p::V, λ::T, μ::T, t::T) where {T<:Real,V<:ModelNode{T}} =
-    TreeNode(i, eltype(p)(
-        θ=Dict(:t=>t,:λ=>λ,:μ=>μ),
-        W=zeros(size(p.x.W)),
-        kind=:sp), p)
-
-# alternatively we could hack WGDs by adding dimensions in ϵ and W
-wgdnode(i::Int64, p::V, q::T, t::T) where {T<:Real,V<:ModelNode{T}} =
-    TreeNode(i, eltype(p)(
-        θ=Dict(:t=>t,:q=>q),
-        W=zeros(size(p.x.W)),
-        kind=:wgd), p)
-
-wgdafternode(i::Int64, p::V) where {T<:Real,V<:ModelNode{T}} =
-    TreeNode(i, eltype(p)(
-        θ=Dict(:t=>0.),
-        W=zeros(size(p.x.W)),
-        kind=:wgdafter), p)
-
-# assumes n is a wgdnode, returns n if not a wgd node
-function nonwgdparent(n::ModelNode)
-    while isawgd(n) ; n = n.p ; end; n
-end
-
-function nonwgdchild(n::ModelNode)
-    while isawgd(n); n = first(n.c); end; n
-end
-
-
 # Model
 # =====
 abstract type PhyloBDPModel{T} end
 
-struct DuplicationLossWGDModel{T<:Real} <: PhyloBDPModel{T}
-    nodes ::Dict{Int64,<:ModelNode{T}}
+struct DLWGD{T<:Real,V<:ModelNode{T}} <: PhyloBDPModel{T}
+    nodes ::Dict{Int64,V}
     leaves::Dict{Int64,Symbol}
 end
 
-const DLWGD{T} = DuplicationLossWGDModel{T}
+const DuplicationLossWGDModel{T} = DLWGD{T}
 
-Base.show(io::IO, d::DLWGD{T}) where T = write(io, "DLWGD{$T}($(length(d)))")
+Base.show(io::IO, d::DLWGD{T,V}) where {T,V} = write(io, "DLWGD{$T,$V}($(length(d)))")
 Base.length(d::DLWGD) = length(d.nodes)
 Base.getindex(d::DLWGD, i::Int64) = d.nodes[i]
 Base.getindex(d::DLWGD, i::Int64, s::Symbol) = d.nodes[i][s]
 ne(d::DLWGD) = 2*length(d.leaves) - 2  # number of edges ignoring WGDs
 
-function DuplicationLossWGDModel(nw::String, df::DataFrame, λ, μ, η,
-        nt::Type=BelugaNode)
+function DLWGD(nw::String, df::DataFrame, λ, μ, η, nt::Type=Node)
     @unpack t, l = readnw(nw)
     M, m = profile(t, l, df)
-    d = DuplicationLossWGDModel(inittree(t, l, η, λ, μ, max(3,m), nt)...)
+    d = DLWGD(initmodel(t, l, η, λ, μ, max(3, m), nt)...)
     set!(d)
-    d, M
+    (model=d, data=Profile(M))
 end
 
-function DuplicationLossWGDModel(nw::String, λ, μ, η, nt::Type=BelugaNode)
+function DLWGD(nw::String, λ, μ, η, nt::Type=Node)
+    # NOTE: model without data; m should be >= 3, otherwise WGD model breaks
     @unpack t, l = readnw(nw)
-    d = DuplicationLossWGDModel(inittree(t, l, η, λ, μ, 3, nt)...)
-    # NOTE: m should be >= 3, otherwise WGD model breaks
+    d = DLWGD(initmodel(t, l, η, λ, μ, 3, nt)...)
     set!(d)
-    d
-end
-
-function setrates!(model::DLWGD{T}, x::Matrix{T}) where T
-    for (i, n) in sort(model.nodes)
-        if isawgd(n) ; break ; end
-        n[:λ] = x[1, n.i]
-        n[:μ] = x[2, n.i]
-    end
-    set!(model)
-end
-
-function logpdf(d::DLWGD, x::Vector{Int64})
-    L = csuros_miklos(x, d[1])
-    l = integrate_root(L[:,1], d[1])
-    l -= condition_oib(d[1])  #XXX sometimes -Inf-(-Inf) = NaN
-    isnan(l) ? -Inf : l
-end
-
-function logpdf!(L::Matrix{T}, x::Vector{Int64}, d::DLWGD{T}) where T<:Real
-    for n in postwalk(d[1])
-        csuros_miklos!(L, x, n)
-    end
-    l = integrate_root(L[:,1], d[1])
-    l -= condition_oib(d[1])  #XXX sometimes -Inf-(-Inf) = NaN
-    isnan(l) ? -Inf : l
-end
-
-# recompute from `n` upward
-function logpdf!(L::Matrix{T}, x::Vector{Int64}, n::ModelNode{T}) where T<:Real
-    while !isroot(n)
-        csuros_miklos!(L, x, n)
-        n = n.p
-    end
-    csuros_miklos!(L, x, n)
-    l = integrate_root(L[:,1], n)
-    l -= condition_oib(n)
-    isnan(l) ? -Inf : l
-end
-
-# when only η has changed at the root, it is wasteful to do `csuros_miklos!`
-function logpdfroot(L::Matrix{T}, n::ModelNode{T}) where T<:Real
-    l = integrate_root(L[:,1], n)
-    l -= condition_oib(n)
-    isnan(l) ? -Inf : l
+    (model=d, data=PArray())
 end
 
 function profile(t::TreeNode, l::Dict, df::DataFrame)
     nodes = postwalk(t)
     M = zeros(Int64, size(df)[1], length(nodes))
     for n in nodes
-        M[:,n.i] = isleaf(n) ? df[:,Symbol(l[n.i])] : sum([M[:,c.i] for c in n.c])
+        M[:,n.i] = isleaf(n) ?
+            df[:,Symbol(l[n.i])] : sum([M[:,c.i] for c in n.c])
     end
     return permutedims(M), maximum(M)+1
 end
 
-function insertwgd!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
-    if isroot(n)
-        throw(ArgumentError("Cannot add WGD above root"))
+"""
+    setrates!(model::DLWGD{T}, X::Matrix{T})
+
+Set duplication and loss rates for each non-wgd node|branch in the model.
+Rates should be provided as a 2 × num_nodes matrix, where the columns
+correspond to model node indices.
+"""
+function setrates!(model::DLWGD{T}, X::Matrix{T}) where T
+    for (i, n) in sort(model.nodes)
+        if isawgd(n) ; break ; end
+        n[:λ] = X[1, n.i]
+        n[:μ] = X[2, n.i]
     end
+    set!(model)
+end
+
+function getrates(model::DLWGD{T}) where T
+    X = zeros(T, 2,ne(model)+1)
+    for (i, n) in sort(model.nodes)
+        if isawgd(n) ; break ; end
+        X[1, n.i] = n[:λ]
+        X[2, n.i] = n[:μ]
+    end
+    X
+end
+
+function getqs(model::DLWGD{T}) where T
+    X = zeros(T, nwgd(model))
+    for (j, i) in enumerate(getwgds(model))
+        X[j] = model[i, :q]
+    end
+    X
+end
+
+"""
+    insertwgd!(d::DLWGD, n::ModelNode, t, q)
+
+Insert a WGD node with retention rate `q` at distance `t` above node `n`.
+"""
+function insertwgd!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
+    @assert !isroot(n) "Cannot add WGD above root node"
+    @assert n[:t] - t > 0. "Invalid WGD time $(n[:t]) - $t < 0."
     parent = n.p
-    n[:t] - t < 0. ? throw(DomainError("$(n[:t]) - $t < 0.")) : nothing
     i = maximum(keys(d.nodes))+1
     w = wgdnode(i, parent, q, n[:t] - t)
     a = wgdafternode(i+1, w)
     insertwgd!(d, n, w, a)
 end
 
-function insertwgd!(d::DLWGD{T}, n::ModelNode{T},
-        w::ModelNode{T}, a::ModelNode{T}) where T<:Real
-    # NOTE: this function assumes `w` and `a` have their parents already
-    # but not children; this is not very elegant
-    n.p.c = setdiff(n.p.c, Set([n])) # ??
+function insertwgd!(d::DLWGD{T}, n::N, w::N, a::N) where {T,N<:ModelNode{T}}
+    # NOTE: assumes `w` and `a` have their parents already but not children
+    n.p.c = setdiff(n.p.c, Set([n])) # remove n from its parent's children
     push!(n.p, w)
     push!(w, a)
     push!(a, n)
@@ -212,9 +105,8 @@ function insertwgd!(d::DLWGD{T}, n::ModelNode{T},
 end
 
 function removewgd!(d::DLWGD, n::ModelNode, reindex::Bool=true)
-    if !iswgd(n)
-        throw(ArgumentError("Not a WGD node $i"))
-    end
+    @assert iswgd(n) "Not a WGD node $i"
+    @assert haskey(d.nodes, n.i) "Node not in model!"
     parent = n.p
     child = first(first(n))
     delete!(first(n), child)
@@ -238,15 +130,30 @@ function reindex!(d::DLWGD, i::Int64)
     end
 end
 
-function inittree(t::TreeNode, l, η::T, λ::T, μ::T,
-        m::Int64, nt::Type) where T<:Real
+function removewgds!(model::DLWGD)
+    for i in getwgds(model)
+        removewgd!(model, model[i])
+    end
+end
+
+function insertwgds!(model::DLWGD, wgds::Dict)
+    for (k,v) in wgds
+        for wgd in v
+            insertwgd!(model, closestnode(model[k], wgd[1])..., wgd[2])
+        end
+    end
+end
+
+function initmodel(t::TreeNode, l::Dict,
+        η::T, λ::T, μ::T, m::Int64, nt::Type) where T<:Real
+    # recursively construct the model by copying a reference tree
     d = Dict(1=>rootnode(η, λ, μ, m, nt))
     n = Dict{Int64,Symbol}()
     function walk(x, y)
         if isroot(x)
             x_ = d[1]
         else
-            d[x.i] = x_ = speciationnode(x.i, y, λ, μ, x.x)
+            d[x.i] = x_ = spnode(x.i, y, λ, μ, x.x)
             push!(y, x_)
         end
         isleaf(x) ? n[x.i] = Symbol(l[x.i]) : [walk(c, x_) for c in x.c]
@@ -262,71 +169,6 @@ function set!(d::DLWGD)
     end
 end
 
-function set!(n::ModelNode)
-    setϵ!(n)
-    setW!(n)
-end
-
-function setabove!(n::ModelNode)
-    while !isnothing(n)
-        set!(n)
-        n = n.p
-    end
-end
-
-function setbelow!(n::ModelNode)
-    for c in n.c
-        set!(c)
-    end
-end
-
-function setϵ!(n::ModelNode{T}) where T<:Real
-    if isleaf(n)
-        n.x.ϵ[2] = 0.
-    elseif iswgd(n)
-        q = n[:q]
-        c = first(n.c)
-        λ, μ = getλμ(n, c)
-        c.x.ϵ[1] = ϵc = gete(c, 2)
-        n.x.ϵ[2] = c.x.ϵ[1] = q*ϵc^2 + (1. - q)*ϵc
-    else
-        n.x.ϵ[2] = one(T)
-        for c in n.c
-            c.x.ϵ[1] = one(T)
-            λ, μ = getλμ(n, c)
-            c.x.ϵ[1] = approx1(ep(λ, μ, c[:t], gete(c, 2)))
-            n.x.ϵ[2] *= c.x.ϵ[1]
-        end
-        n.x.ϵ[2] = approx1(n.x.ϵ[2])
-    end
-end
-
-function setW!(n::ModelNode{T}) where T<:Real
-    if isroot(n)
-        return
-    end
-    λ, μ = getλμ(n.p, n)
-    ϵ = gete(n, 2)
-    if iswgdafter(n)
-        q = n.p[:q]
-        wstar_wgd!(n.x.W, n[:t], λ, μ, q, ϵ)
-    else
-        wstar!(n.x.W, n[:t], λ, μ, ϵ)
-    end
-end
-
-function getλμ(a::TreeNode{BelugaNode{T}}, b::TreeNode{BelugaNode{T}}) where T
-    a = isawgd(a) ? nonwgdparent(a) : a
-    b = isawgd(b) ? nonwgdchild(b)  : b
-    # 0.5*(a[:λ, :μ] .+ b[:λ, :μ]) below is faster
-    [(a[:λ]+b[:λ])/2., (a[:μ]+b[:μ])/2.]
-end
-
-function getλμ(a::TreeNode{BelugaBranch{T}}, b::TreeNode{BelugaBranch{T}}) where T
-    b = isawgd(b) ? nonwgdchild(b)  : b
-    [b[:λ], b[:μ]]
-end
-
 function branchrates(d::DLWGD)
     r = zeros(2, ne(d)+1)
     r[:,1] = d[1][:λ, :μ]
@@ -338,40 +180,104 @@ function branchrates(d::DLWGD)
     r
 end
 
-function wstar!(w, t, λ, μ, ϵ)
-    # compute w* (Csuros Miklos 2009)
-    ϕ = getϕ(t, λ, μ)  # p
-    ψ = getψ(t, λ, μ)  # q
-    _n = 1. - ψ*ϵ
-    ϕp = approx1((ϕ*(1. - ϵ) + (1. - ψ)*ϵ) / _n)
-    ψp = approx1(ψ*(1. - ϵ) / _n)
-    w[1,1] = 1.
-    for m=1:size(w)[1]-1, n=1:m
-        w[n+1, m+1] = ψp*w[n+1, m] + (1. - ϕp)*(1. - ψp)*w[n, m]
+function setparams!(d::DLWGD, row::DataFrameRow)
+    for (i,n) in d.nodes
+        for (k,v) in n.x.θ
+            s = id(n, k)
+            s in names(row) ? n[k] = row[s] : nothing
+        end
     end
 end
 
-function wstar_wgd!(w, t, λ, μ, q, ϵ)
-    # compute w* (Csuros Miklos 2009)
-    w[1,1] = 1.
-    w[2,2] = ((1. - q) + 2q*ϵ)*(1. - ϵ)
-    w[2,3] = q*(1. - ϵ)^2
-    mmax = size(w)[1]-1
-    for i=1:mmax, j=2:mmax
-        w[i+1, j+1] =  w[2,2]*w[i, j] + w[2,3]*w[i, j-1]
-    end
+function (m::DLWGD)(row::DataFrameRow)
+    model = deepcopy(m)
+    removewgds!(model)
+    setparams!(model, row)
+    insertwgds!(model, row[:wgds])
+    set!(model)
+    model
 end
 
-function csuros_miklos(x, node::ModelNode{T}) where T<:Real
+function (model::DLWGD{T,V})(θ::Vector{Y}) where {T<:Real,V<:ModelNode{T},Y<:Real}
+    n = ne(model)+1
+    m = size(model[1].x.W)[1]
+    nt = nodetype(model[1])
+    λ = θ[1:n]
+    μ = θ[n+1:2n]
+    q = θ[2n+1:end-1]
+    d = Dict(1=>rootnode(θ[end], λ[1], μ[1], m, nt))
+    function recursivecopy(x, y)
+        if isroot(x)
+            x_ = d[1]
+        elseif issp(x)
+            d[x.i] = x_ = spnode(x.i, y, λ[x.i], μ[x.i], Y(x[:t]))
+            push!(y, x_)
+        elseif iswgd(x)
+            j = x.i % n
+            j -= (j - 1) ÷ 2
+            d[x.i] = x_ = wgdnode(x.i, y, q[j], Y(x[:t]))
+            push!(y, x_)
+        elseif iswgdafter(x)
+            d[x.i] = x_ = wgdafternode(x.i, y)
+            push!(y, x_)
+        end
+        if !isleaf(x)
+            [recursivecopy(c, x_) for c in x.c]
+        end
+        return x_
+    end
+    recursivecopy(model[1], nothing)
+    return DLWGD(d, model.leaves)
+end
+
+
+# Log-likelihood computation
+# ==========================
+function logpdf(d::DLWGD, x::Vector{Int64})
+    L = csuros_miklos(d[1], x)
+    l = integrate_root(L[:,1], d[1])
+    l -= condition_oib(d[1])  #XXX sometimes -Inf-(-Inf) = NaN
+    isnan(l) ? -Inf : l
+end
+
+function logpdf!(L::Matrix{T}, d::DLWGD{T}, x::Vector{Int64}) where T<:Real
+    for n in postwalk(d[1])
+        csuros_miklos!(L, n, x)
+    end
+    l = integrate_root(L[:,1], d[1])
+    l -= condition_oib(d[1])  # XXX sometimes -Inf-(-Inf) = NaN
+    isnan(l) ? -Inf : l
+end
+
+# recompute from `n` upward
+function logpdf!(L::Matrix{T}, n::ModelNode{T}, x::Vector{Int64}) where T<:Real
+    while !isroot(n)
+        csuros_miklos!(L, n, x)
+        n = n.p
+    end
+    csuros_miklos!(L, n, x)
+    l = integrate_root(L[:,1], n)
+    l -= condition_oib(n)
+    isnan(l) ? -Inf : l
+end
+
+# when only η has changed at the root, it is wasteful to use `csuros_miklos!`
+function logpdfroot(L::Matrix{T}, n::ModelNode{T}) where T<:Real
+    l = integrate_root(L[:,1], n)
+    l -= condition_oib(n)
+    isnan(l) ? -Inf : l
+end
+
+function csuros_miklos(node::ModelNode{T}, x::Vector{Int64}) where T<:Real
     L = minfs(T, maximum(x)+1, length(x))
     for n in postwalk(node)
-        csuros_miklos!(L, x, n)
+        csuros_miklos!(L, n, x)
     end
     L
 end
 
-function csuros_miklos!(L::Matrix{T}, x::Vector{Int64},
-        node::ModelNode{T}) where T<:Real
+function csuros_miklos!(L::Matrix{T},
+        node::ModelNode{T}, x::Vector{Int64}) where T<:Real
     # NOTE: possible optimizations:
     #  - column-major based access B, W, (L ✓)
     #  - matrix operations instead of some loops ~ WGDgc
@@ -413,7 +319,7 @@ function csuros_miklos!(L::Matrix{T}, x::Vector{Int64},
                     else
                         p = _ϵ[i]
                         if !(zero(p) <= p <= one(p))
-                            @error "Invalid extinction probability ($p)"
+                            @warn "Invalid extinction probability, set to 1" p
                             p = one(p)
                         end
                         lp = logpdf(Binomial(n, p), s) +
@@ -449,7 +355,7 @@ function condition_oib(n::ModelNode{T}) where T<:Real
     lη = log(n[:η])
     lr = [geometric_extinctionp(log(gete(c, 1)), lη) for c in n.c]
     if lr[1] > zero(T) || lr[2] > zero(T)
-        @warn "Invalid probabilities at `condition_oib`, returning -Inf"
+        @warn "Invalid probabilities at `condition_oib`, returning -Inf" lr
         return -Inf
     else
         return log1mexp(lr[1]) + log1mexp(lr[2])
@@ -457,35 +363,19 @@ function condition_oib(n::ModelNode{T}) where T<:Real
 end
 
 
-# Instantiate a model from a data frame row, assumes a base model to copy
-# **without** WGDs! (HACK: not elegant)
-function (m::DuplicationLossWGDModel)(row::DataFrameRow)
-    model = deepcopy(m)
-    for i in getwgds(model)
-        @show i
-        removewgd!(model, model[i])
-    end
-    for (i,n) in model.nodes
-        for (k,v) in n.x.θ
-            s = id(n, k)
-            s in names(row) ? n[k] = row[s] : nothing
-        end
-        update!(n)
-    end
-    for (k,v) in row[:wgds]
-        for wgd in v
-            insertwgd!(model, closestnode(model[k], wgd[2])..., wgd[1])
-        end
-    end
-    model
+# gradient
+gradient(m::DLWGD{T}, x::PArray) = mapreduce((x)->gradient(m, x), +, x)
+
+function gradient(d::DLWGD{T}, x::Vector{Int64}) where T<:Real
+    v = asvector(d)
+    f = (u) -> logpdf(d(u), x)
+    g = ForwardDiff.gradient(f, v)
+    return g[:, 1]
 end
 
-function closestnode(n, t)
-    t_ = t - n[:t]
-    while t_ > 0
-        t = t_
-        n = n.p
-        t_ -= n[:t]
-    end
-    n, t
+function asvector(d::DLWGD)
+    r = getrates(d)
+    q = getqs(d)
+    η = d[1, :η]
+    vcat(r[1,:], r[2,:], q, η)
 end

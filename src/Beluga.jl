@@ -15,12 +15,14 @@ module Beluga
     import Distributions: logpdf, logpdf!
     import AdaptiveMCMC: ProposalKernel, DecreaseλProposal
 
+    include("node.jl")
     include("model.jl")
     include("utils.jl")
     include("profile.jl")
     include("rjmcmc.jl")
     include("moves.jl")
     include("sim.jl")
+    include("post.jl")
 
     export DuplicationLossWGDModel, DLWGD, logpdf, logpdf!, update!
     export insertwgd!, removewgd!, isawgd, iswgd, isroot, iswgdafter
@@ -28,6 +30,7 @@ module Beluga
     export Profile, PArray, extend!, shrink!, set!, rev!
     export RevJumpChain, RevJumpPrior, move!, init!, trace!
     export move_addwgd!, move_rmwgd!, branchrates!, mcmc!, rjmcmc!
-    export IidRevJumpPrior, CoevolRevJumpPrior, BelugaBranch, BelugaNode
+    export IidRevJumpPrior, CoevolRevJumpPrior
     export branch_bayesfactors, UpperBoundedGeometric, get_wgdtrace
+    export Branch, Node
 end
