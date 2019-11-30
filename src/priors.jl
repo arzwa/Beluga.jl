@@ -1,0 +1,161 @@
+# Prior related
+# =============
+abstract type Model end
+abstract type RevJumpPrior <: Model end
+
+struct ConstantDistribution{T}
+    x::T
+end
+
+Base.rand(x::ConstantDistribution) = x
+pdf(x::ConstantDistribution, y) = 1.
+logpdf(x::ConstantDistribution, y) = 0.
+
+"""
+    UpperBoundedGeometric{T<:Real}
+
+An upper bounded geometric distribution, basically a constructor for a
+`DiscreteNonParametric` distribution with the relevant probabilities.
+"""
+struct UpperBoundedGeometric{T<:Real} <: DiscreteUnivariateDistribution
+    d::DiscreteNonParametric{Int64,T,UnitRange{Int64},Array{T,1}}
+    p::T
+    b::Int64
+    function UpperBoundedGeometric(p::T, bound::Int64) where T<:Real
+        xs = pdf.(Geometric(p), 0:bound)
+        ps = xs ./ sum(xs)
+        new{T}(DiscreteNonParametric(0:bound, ps), p, bound)
+    end
+end
+
+Base.rand(d::UpperBoundedGeometric) = rand(d.d)
+pdf(d::UpperBoundedGeometric, x::Int64) = pdf(d.d, x)
+logpdf(d::UpperBoundedGeometric, x::Int64) = logpdf(d.d, x)
+
+
+# Coevol-like Prior
+# =================
+"""
+    CoevolRevJumpPrior
+
+Bivariate autocorrelated rates prior inspired by coevol (Lartillot & Poujol
+2010) with an Inverse Wishart prior on the unknown covariance 2×2 matrix.
+Crucially, this is defined for the `Node` based model, i.e. states at model
+nodes are assumed to be states at *nodes* of the phylogeny.
+"""
+@with_kw struct CoevolRevJumpPrior{T,U,V,W} <: RevJumpPrior
+    Σ₀::Matrix{Float64}  = [500. 0. ; 0. 500.]
+    X₀::T                = MvNormal([1.,1.])
+    πη::U                = Beta(3., 1)
+    πq::V                = Beta()
+    πK::W                = Geometric(0.5)
+    @assert isposdef(Σ₀)
+end
+
+# one-pass prior computation based on the model
+function logpdf(prior::CoevolRevJumpPrior, d::DLWGD)
+    @unpack Σ₀, X₀, πη, πq, πK = prior
+    p = 0.; M = 2; J = 1.; k = 0
+    N = ne(d)
+    Y = zeros(N, M)
+    A = zeros(M,M)
+    for (i, n) in d.nodes
+        if iswgdafter(n)
+            continue
+        elseif iswgd(n)
+            p += logpdf(πq, n[:q])  # what about the time? it is also random?
+            k += 1
+        elseif isroot(n)
+            p += logpdf(πη, n[:η])
+            p += logpdf(X₀, log.(n[:λ, :μ]))
+        else
+            pt = nonwgdparent(n.p)
+            Δt = parentdist(n, pt)
+            Y[i-1,:] = (log.(n[:λ, :μ]) - log.(pt[:λ, :μ])) / √Δt
+            A += Y[i-1,:]*Y[i-1,:]'
+            J *= Δt
+        end
+    end
+    p += logp_pics(Σ₀, (Y=Y, J=J^(-M/2), A=A, q=M+1, n=N))
+    p + logpdf(πK, k)
+end
+
+# p(Y|Σ₀,q), q = df, n = # of branches
+function logp_pics(Σ₀, θ)
+    @unpack J, A, q, n = θ
+    # in our case the Jacobian is a constant (tree and times are fixed)
+    log(J) + (q/2)*log(det(Σ₀)) - ((q + n)/2)*log(det(Σ₀ + A))
+end
+
+function Base.rand(prior::CoevolRevJumpPrior, d::DLWGD)
+    @unpack Σ₀, X₀, πη, πq, πK = prior
+    model = deepcopy(d)
+    Σ = rand(InverseWishart(3, Σ₀))
+    for n in prewalk(model[1])
+        if iswgdafter(n)
+            continue
+        elseif iswgd(n)
+            n[:q] = rand(πq)
+        elseif isroot(n)
+            n[:η] = rand(πη)
+            r = exp.(rand(X₀))
+            n[:λ] = r[1]
+            n[:μ] = r[2]
+        else
+            θp = log.(nonwgdparent(n.p)[:λ, :μ])
+            t = parentdist(n, nonwgdparent(n.p))
+            θ = exp.(rand(MvNormal(θp, Σ*t)))
+            n[:λ] = θ[1]
+            n[:μ] = θ[2]
+        end
+    end
+    set!(model)
+    return (model=model, Σ=Σ)
+end
+
+
+# Independent rates pior
+# ======================
+"""
+    IidRevJumpPrior
+
+Bivariate uncorrelated rates prior with an Inverse Wishart prior on the unknown
+covariance 2×2 matrix. Crucially, this is defined for the `Branch` based model,
+i.e. states at model nodes are assumed to be states at *branches* of the
+phylogeny.
+"""
+@with_kw struct IidRevJumpPrior{T,U,V,W} <: RevJumpPrior
+    Σ₀::Matrix{Float64} = [1 0. ; 0. 1]
+    X₀::T               = MvNormal([1., 1.])
+    πη::U               = Beta(3., 1)
+    πq::V               = Beta()
+    πK::W               = Geometric(0.5)
+    @assert isposdef(Σ₀)
+end
+
+function logpdf(prior::IidRevJumpPrior, d::DLWGD)
+    @unpack Σ₀, X₀, πη, πq, πK = prior
+    p = 0.; M = 2; J = 1.; k = 0
+    N = ne(d)
+    Y = zeros(N, M)
+    A = zeros(M,M)
+    X0 = log.(d[1][:λ, :μ])
+    for (i, n) in d.nodes
+        if iswgdafter(n)
+            continue
+        elseif iswgd(n)
+            p += logpdf(πq, n[:q])  # what about the time? it is also random?
+            k += 1
+        elseif isroot(n)
+            p += logpdf(πη, n[:η])
+            p += logpdf(X₀, X0)
+        else
+            Y[i-1,:] = log.(n[:λ, :μ]) - X0
+            A += Y[i-1,:]*Y[i-1,:]'
+        end
+    end
+    p += logp_pics(Σ₀, (Y=Y, J=1., A=A, q=M+1, n=N))
+    p + logpdf(πK, k)
+end
+
+scattermat(m::DLWGD, pr::IidRevJumpPrior) = scatermat_iid(m)

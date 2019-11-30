@@ -12,7 +12,7 @@ using Test, DataFrames, CSV, Distributions, LinearAlgebra
 
 df = CSV.read("test/data/plants1-100.tsv", delim=",")
 nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
-d, p = DLWGD(nw, df, 1., 1., 0.9, Branch)
+d, p = DLWGD(nw, df, 2., 1., 0.9, Branch)
 
 
 # branch model
@@ -29,7 +29,7 @@ begin
         X₀=MvNormal([0., 0.], I),
         πK=Beluga.UpperBoundedGeometric(0.3, 15),
         πq=Beta(1,1),
-        πη=0.9)
+        πη=Beta(3,1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
     init!(chain, rjump=(1., 10., 0.001))
 

@@ -144,6 +144,29 @@ function insertwgds!(model::DLWGD, wgds::Dict)
     end
 end
 
+function randpos(model::DLWGD)
+    l = length(model)
+    v = zeros(l)
+    for (i, n) in model.nodes
+        v[i] = n[:t]
+    end
+    i = sample(1:l, Weights(v))
+    t = rand(Uniform(0., model[i][:t]))
+    model[i], t
+end
+
+nwgd(model::DLWGD) = length(getwgds(model))
+randwgd(model::DLWGD) = model[rand(getwgds(model))]
+
+function getwgds(model)
+    wgds = Int64[]; i = maximum(keys(model.nodes))
+    while isawgd(model[i])
+        iswgd(model[i]) ? push!(wgds, i) : nothing
+        i -= 1
+    end
+    wgds
+end
+
 function initmodel(t::TreeNode, l::Dict,
         η::T, λ::T, μ::T, m::Int64, nt::Type) where T<:Real
     # recursively construct the model by copying a reference tree
@@ -178,6 +201,22 @@ function branchrates(d::DLWGD)
         end
     end
     r
+end
+
+function scattermat_iid(d::DLWGD)
+    N = ne(d); M = 2
+    Y = zeros(N, M)
+    A = zeros(M, M)
+    X0 = log.(d[1][:λ, :μ])
+    for (i, n) in d.nodes
+        if isawgd(n) || isroot(n)
+            continue
+        else
+            Y[i-1,:] = log.(n[:λ, :μ]) - X0
+            A += Y[i-1,:]*Y[i-1,:]'
+        end
+    end
+    (A=A, Y=Y, q=M+1, n=N)
 end
 
 function setparams!(d::DLWGD, row::DataFrameRow)
@@ -227,7 +266,9 @@ function (model::DLWGD{T,V})(θ::Vector{Y}) where {T<:Real,V<:ModelNode{T},Y<:Re
         return x_
     end
     recursivecopy(model[1], nothing)
-    return DLWGD(d, model.leaves)
+    newmodel = DLWGD(d, model.leaves)
+    set!(newmodel)
+    newmodel
 end
 
 
@@ -237,7 +278,7 @@ function logpdf(d::DLWGD, x::Vector{Int64})
     L = csuros_miklos(d[1], x)
     l = integrate_root(L[:,1], d[1])
     l -= condition_oib(d[1])  #XXX sometimes -Inf-(-Inf) = NaN
-    isnan(l) ? -Inf : l
+    isfinite(l) ? l : -Inf
 end
 
 function logpdf!(L::Matrix{T}, d::DLWGD{T}, x::Vector{Int64}) where T<:Real
@@ -246,7 +287,7 @@ function logpdf!(L::Matrix{T}, d::DLWGD{T}, x::Vector{Int64}) where T<:Real
     end
     l = integrate_root(L[:,1], d[1])
     l -= condition_oib(d[1])  # XXX sometimes -Inf-(-Inf) = NaN
-    isnan(l) ? -Inf : l
+    isfinite(l) ? l : -Inf
 end
 
 # recompute from `n` upward
@@ -258,14 +299,14 @@ function logpdf!(L::Matrix{T}, n::ModelNode{T}, x::Vector{Int64}) where T<:Real
     csuros_miklos!(L, n, x)
     l = integrate_root(L[:,1], n)
     l -= condition_oib(n)
-    isnan(l) ? -Inf : l
+    isfinite(l) ? l : -Inf
 end
 
 # when only η has changed at the root, it is wasteful to use `csuros_miklos!`
 function logpdfroot(L::Matrix{T}, n::ModelNode{T}) where T<:Real
     l = integrate_root(L[:,1], n)
     l -= condition_oib(n)
-    isnan(l) ? -Inf : l
+    isfinite(l) ? l : -Inf
 end
 
 function csuros_miklos(node::ModelNode{T}, x::Vector{Int64}) where T<:Real
@@ -363,14 +404,13 @@ function condition_oib(n::ModelNode{T}) where T<:Real
 end
 
 
-# gradient
-gradient(m::DLWGD{T}, x::PArray) = mapreduce((x)->gradient(m, x), +, x)
-
+# gradient, seems to only work in NaN safe mode http://www.juliadiff.org/
+# ForwardDiff.jl/stable/user/advanced/#Fixing-NaN/Inf-Issues-1
 function gradient(d::DLWGD{T}, x::Vector{Int64}) where T<:Real
     v = asvector(d)
     f = (u) -> logpdf(d(u), x)
     g = ForwardDiff.gradient(f, v)
-    return g[:, 1]
+    return g::Vector{Float64}
 end
 
 function asvector(d::DLWGD)

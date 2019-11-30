@@ -2,20 +2,6 @@
 # ================
 using Test, DataFrames, CSV, Distributions, Random
 import Beluga: csuros_miklos, csuros_miklos!, minfs
-Random.seed!(333)
-
-# setup
-datadir = "data"
-df1 = DataFrame(:A=>[2,3],:B=>[2,5],:C=>[3,0],:D=>[4,1])
-df2 = DataFrame(:A=>rand(1:20, 1000), :B=>rand(1:20, 1000),
-    :C=>rand(1:10, 1000), :D=>rand(1:10, 1000))
-df3 = CSV.read(joinpath(datadir, "plants1-100.tsv"), delim=",")
-s1 = s2 = "(D:18.03,(C:12.06,(B:7.06,A:7.06):4.99):5.97);"
-s3 = open(joinpath(datadir, "plants1.nw"), "r") do f ; readline(f); end
-shouldbe1 = [-Inf, -13.0321, -10.2906, -8.96844, -8.41311, -8.38041,
-    -8.78481, -9.5921, -10.8016, -12.4482, -14.6268, -17.607]
-shouldbe2 = [-Inf, -12.6372, -10.112, -8.97727, -8.59388, -8.72674,
-    -9.29184, -10.2568, -11.6216, -13.4219, -15.753, -18.8843]
 
 
 @testset "DL model, Csuros & Miklos algorithm" begin
@@ -138,5 +124,65 @@ end
         λ, η = exp(rand(r1)), rand(r2)
         d, p = DLWGD(s1, df1, λ, λ, η)
         logpdf!(d, p)
+    end
+end
+
+
+@testset "Profile DL model, full loglikelihood" begin
+    # test data based on previous Beluga implementation
+    λ = [0.56, 0.97, 0.12, 0.21, 4.23, 0.12, 0.77, 2.01, 2.99, 0.44]
+    μ = [0.64, 0.36, 0.25, 0.57, 0.42, 0.49, 0.61, 0.69, 3.92, 0.53]
+    η = [0.55, 0.56, 0.93, 0.57, 0.59, 0.06, 0.15, 0.41, 0.96, 0.12]
+    for i=1:length(λ)
+        d, p = DLWGD(s3, df3, λ[i], μ[i], η[i])
+        l = logpdf!(d, p)
+        @test shouldbe3[i] ≈ l
+    end
+end
+
+
+@testset "Profile DL model, extending and shrinking" begin
+    # test data based on previous Beluga implementation
+    λ = [0.56, 0.97, 0.12, 0.21, 4.23, 0.12, 0.77, 2.01, 2.99, 0.44]
+    μ = [0.64, 0.36, 0.25, 0.57, 0.42, 0.49, 0.61, 0.69, 3.92, 0.53]
+    η = [0.55, 0.56, 0.93, 0.57, 0.59, 0.06, 0.15, 0.41, 0.96, 0.12]
+    for i=1:length(λ)
+        d, p = DLWGD(s3, df3, λ[i], μ[i], η[i])
+        l = logpdf!(d, p)
+        r = rand(2:length(d), 10)
+        wnodes = []
+        while length(wnodes) != length(r) || length(r) != 0
+            u = rand()
+            if length(r) > 0 && u < 0.5
+                j = pop!(r)
+                w = insertwgd!(d, d[j], rand()*d[j][:t], rand())
+                extend!(p, j)
+                logpdf!(d[j], p)
+                push!(wnodes, w)
+            elseif length(wnodes) > 0 && u > 0.5
+                wgdnode = pop!(wnodes)
+                child = removewgd!(d, wgdnode)
+                shrink!(p, wgdnode.i)
+                logpdf!(child, p)
+            end
+        end
+        # @show length(d), length(postwalk(d[1]))
+        l = logpdf!(d, p)
+        @test shouldbe3[i] ≈ l
+    end
+end
+
+
+@testset "Gradient (profile)" begin
+    g = [0.0, 0.21654, -4.29457, 0.28282, -0.07077, -1.77586, -2.57598,
+        6.25627, -2.82879, 1.81408, 3.84539, 19.34362, -0.47348, -1.39255,
+        -2.83181, 27.41048, -1.44903, -2.66647, 3.29678, 0.0, -0.08539,
+        2.6401, -0.37875, 0.12269, -1.05525, -1.48215, -1.38917, 7.49706,
+        0.25451, -2.1514, -10.16407, 0.06406, 1.94643, 11.01334, -1.90087,
+        1.26579, 22.01815, -3.40453, 49.2567]
+    d, p = DLWGD(s4, df3, 2., 1., 0.9, Branch)
+    g_ = Beluga.gradient(d, p)
+    for i=1:length(g)
+        @test isapprox(g[i], g_[i], atol=0.0001)
     end
 end

@@ -11,16 +11,17 @@ module Beluga
     using LinearAlgebra
     using MCMCChains
     using Printf
+    using ForwardDiff
 
-    import Distributions: logpdf, logpdf!
+    import Distributions: logpdf, logpdf!, pdf
     import AdaptiveMCMC: ProposalKernel, DecreaseλProposal
 
     include("node.jl")
     include("model.jl")
     include("utils.jl")
     include("profile.jl")
+    include("priors.jl")
     include("rjmcmc.jl")
-    include("moves.jl")
     include("sim.jl")
     include("post.jl")
 
