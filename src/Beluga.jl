@@ -14,7 +14,7 @@ module Beluga
     using ForwardDiff
 
     import Distributions: logpdf, logpdf!, pdf
-    import AdaptiveMCMC: ProposalKernel, DecreaseλProposal
+    import AdaptiveMCMC: ProposalKernel, DecreaseProposal
 
     include("node.jl")
     include("model.jl")

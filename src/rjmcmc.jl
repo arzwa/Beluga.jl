@@ -3,13 +3,22 @@
 # * initial implementation, hardcoded for only two correlated characters
 # * the proposal mechnism is not yet type stable...
 
-const MvProposals = Dict{Int64,Vector{ProposalKernel}}
+const Proposals = Dict{Int64,Vector{AdaptiveUvProposal{T,V} where {T,V}}}
+const State = Dict{Symbol,Union{Float64,Int64}}
+
+# @with_kw mutable struct Props{T,U,V,W,X,Y}
+#     rates::Dict{Int64,T}
+#     wgdst::Dict{Int64,U}
+#     wgdsr::Dict{Int64,V}
+#     root ::W
+#     rjump::Array{X,Y}
+# end
 
 @with_kw mutable struct RevJumpChain{T<:Real,V<:ModelNode{T},M<:RevJumpPrior}
     data ::PArray{T}
     model::DLWGD{T,V}
     prior::M            = IidRevJumpPrior()
-    props::MvProposals  = MvProposals()
+    props::Proposals    = Proposals()
     state::State        = State(:gen=>0, :logp=>NaN, :logπ=>NaN, :k=>0)
     trace::DataFrame    = DataFrame()
 end
@@ -49,7 +58,7 @@ function setprops!(props, model, rjump)
                     kernel=Beta(rjump[1], rjump[2]),
                     bounds=(0.,1.), tuneinterval=10^10, stop=0,
                     move=AdaptiveMCMC.independent),
-                DecreaseλProposal(rjump[3], 10^10)]
+                DecreaseProposal(rjump[3], 10^10)]
             # they should be correlated, a large q with a strong decrease in λ
             props[i] = CoevolUnProposals()
         else
@@ -118,8 +127,8 @@ end
 # Custom Proposals
 # ================
 # Extension of AdaptiveMCMC lib, proposal moves for vectors [q, λ, μ]
-WgdProposals(ϵ=[1.0, 1.0, 1.0, 1.0], ti=25) = [AdaptiveUvProposal(
-    kernel=Uniform(-e, e), tuneinterval=ti, move=m)
+WgdProposals(ϵ=[1.0, 1.0, 1.0, 1.0], ti=25) = AdaptiveUvProposal[
+    AdaptiveUvProposal(kernel=Uniform(-e, e), tuneinterval=ti, move=m)
         for (m, e) in zip([wgdrw, wgdrand, wgdiid, wgdqλ], ϵ)]
 
 function wgdrw(k::AdaptiveUvProposal, x::Vector{Float64})
@@ -208,7 +217,7 @@ function move_node!(chain, n, equal::Bool=false)
     @unpack data, state, model, props, prior = chain
     v = n[:λ, :μ]
     prop = rand(props[n.i])
-    w, r = prop(log.(v))
+    w::Vector{Float64}, r::Float64 = prop(log.(v))
     equal ? w[2] = w[1] : nothing
     update!(n, (λ=exp(w[1]), μ=exp(w[2])))
     l_ = logpdf!(n, data)
@@ -235,7 +244,7 @@ function move_root!(chain, n)
     end
     prop = props[0][1]
     η = n[:η]
-    η_, r = prop(η)
+    η_::Float64, r::Float64 = prop(η)
     update!(n, :η, η_)
     l_ = logpdfroot(n, data)
     p_ = logpdf(prior, model)
@@ -253,7 +262,7 @@ function move_root!(chain, n)
     return
 end
 
-# ove for both retention rate and time of WGD
+# move for both retention rate and time of WGD
 function move_wgdtime!(chain, n)
     @unpack data, state, model, props, prior = chain
     prop = props[n.i][1]
@@ -264,7 +273,7 @@ function move_wgdtime!(chain, n)
     u = rand()
     r = 0.
     if u < 0.66  # move q
-        q_, r = prop(q)
+        q_::Float64, r::Float64 = prop(q)
         n[:q] = q_  # update from child below
     elseif u > 0.33  # move t
         t = rand()*(t1 + t2)
@@ -300,7 +309,7 @@ function move_wgdrates!(chain, prior::CoevolRevJumpPrior, n)
     rates = flank[:λ, :μ]
     v = [q; log.(rates)]
     prop = rand(props[n.i][2:end])
-    w, r = prop(v)
+    w::Vector{Float64}, r::Float64 = prop(v)
     n[:q] = w[1]
     flank[:λ] = exp(w[2])
     flank[:μ] = exp(w[3])
@@ -331,7 +340,7 @@ function move_wgdrates!(chain, prior::IidRevJumpPrior, n)
     rates = child[:λ, :μ]
     v = [q; log.(rates)]
     prop = rand(props[n.i][2:end])
-    w, r = prop(v)
+    w::Vector{Float64}, r::Float64 = prop(v)
     n[:q] = w[1]
     update!(child, (λ=exp(w[2]), μ=exp(w[3])))
     l_ = logpdf!(n, data)
@@ -364,8 +373,8 @@ function move_addwgd!(chain)
     propq = chain.props[0][2]
     propλ = chain.props[0][3]
     λn    = child[:λ]
-    q, _  = propq(0.)
-    θ, _  = propλ(log(λn))
+    q::Float64, r1::Float64  = propq(0.)
+    θ::Float64, r2::Float64  = propλ(log(λn))
 
     child[:λ] = exp(θ)
     wgdnode = insertwgd!(chain.model, n, t, q)
@@ -391,6 +400,7 @@ function move_addwgd!(chain)
         removewgd!(chain.model, wgdnode)
         rev!(data)
     end
+    return
 end
 
 
@@ -404,7 +414,7 @@ function move_rmwgd!(chain)
     wgdafter = first(wgdnode)
     n  = nonwgdchild(wgdnode)
     λn = n[:λ]
-    θ, _  = propλ(log(λn))
+    θ::Float64, r1::Float64  = propλ(log(λn))
     θ  = log(λn) - (θ - log(λn))  # HACK to reverse decrease proposal
     n[:λ] = exp(θ)
     child = removewgd!(chain.model, wgdnode, false)
@@ -432,6 +442,7 @@ function move_rmwgd!(chain)
         insertwgd!(chain.model, child, wgdnode, wgdafter)
         rev!(data)
     end
+    return
 end
 
 # function _move_addwgd!(chain::RevJumpChain{T,}) where T

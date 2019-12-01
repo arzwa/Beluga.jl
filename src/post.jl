@@ -1,14 +1,20 @@
 # MCMCChains interface, diagnostics etc.
 function MCMCChains.Chains(trace::DataFrame, burnin=1000)
-    df = deletecols(trace, :wgds)
-    if size(df)[1] < burnin
-        @error "Trace not long enough to discard $burnin iterations as burn-in"
+    df = select(trace, Not([:wgds]))
+    for col in names(df)
+        df[!,col] .= coalesce.(df[!,col], 0.)
     end
+    @assert size(df)[1] > burnin "# MCMC generations < $burnin (burnin)"
     X = reshape(Matrix(df), (size(df)...,1))[burnin+1:end, 2:end, :]
     return Chains(X, [string(x) for x in names(df)][2:end])
 end
 
 # get an MCMCChains chain (gives diagnostics etc.)
+"""
+    Chains(chain::RevJumpChain, burnin)
+
+Obtain and MCMCChains object, with summary and diagnostic statistics.
+"""
 MCMCChains.Chains(c::RevJumpChain, burnin=1000) = Chains(c.trace, burnin)
 
 """
@@ -45,23 +51,15 @@ end
 # Bayes factors
 # =============
 # Prior probabilities for # of WGDs on each branch
-# function kbranch_prior(n, k, T, prior, kmax=100)
-#     # NOTE approximate: kmax is the truncation bound for the # of WGDs in total
-#     # k is the maximal number of WGDs on the branch of interest for which the
-#     # prior should be computed
-#     te = parentdist(n, nonwgdparent(n.p))
-#     p = Dict(j=>0. for j=0:k)
-#     for j=0:k
-#         q = (te/T)^j
-#         for i=0:kmax
-#             p[j] += binomial(i, j)*q*(1. - (te/T))^(i-j)*pdf(prior, i)
-#         end
-#     end
-#     p
-# end
+function kbranch_prior(k, t, T, prior::UpperBoundedGeometric)
+    kmax = prior.b
+    f = t/T
+    sum([binomial(i, k)*f^k*(1. - f)^(i-k)*pdf(prior, i) for i=k:kmax])
+end
 
-# closed form
-function kbranch_prior(k, t, T, p)
+# closed form under Geometric prior
+function kbranch_prior(k, t, T, prior::Geometric)
+    p = prior.p
     a = t/T
     b = 1. - t/T
     q = 1. - p
@@ -71,7 +69,7 @@ end
 function branch_bayesfactors(chain, burnin::Int64=1000)
     @unpack trace, model, prior = chain
     trace_ = trace[burnin+1:end,:]
-    df = branch_bayesfactors(trace_, model, prior.πK.p)
+    df = branch_bayesfactors(trace_, model, prior.πK)
     show_bayesfactors(df)
     df
 end
@@ -80,15 +78,15 @@ end
     branch_bayesfactors(trace::DataFrame, model::DLWGD, p::Float64)
 
 Compute Bayes Factors for all branch WGD configurations. Returns a data frame
-that is more or less self-explanatory. 
+that is more or less self-explanatory.
 """
-function branch_bayesfactors(trace::DataFrame, model::DLWGD, p::Float64)
+function branch_bayesfactors(trace::DataFrame, model::DLWGD, p)
     T = treelength(model)
     df = DataFrame()
     for (i,n) in sort(model.nodes)
         if isawgd(n); break; end
         if !(Symbol("k$i") in names(trace)); continue; end
-        fmap = freqmap(trace[Symbol("k$i")])
+        fmap = freqmap(trace[!,Symbol("k$i")])
         kmax = maximum(keys(fmap))
         te = parentdist(n, nonwgdparent(n.p))
         ps = [haskey(fmap, i) ? fmap[i] : 0. for i in 0:kmax]
@@ -103,10 +101,10 @@ function branch_bayesfactors(trace::DataFrame, model::DLWGD, p::Float64)
         df = vcat(df, df_)
     end
     # compute BFs
-    df[:K] = (df[:p1] ./ df[:p0]) ./ (df[:π1] ./ df[:π0])
-    df[:log10K] = log10.(df[:K])
+    df[!,:K] = (df[!,:p1] ./ df[!,:p0]) ./ (df[!,:π1] ./ df[!,:π0])
+    df[!,:log10K] = log10.(df[!,:K])
     for x in [0.5, 1., 2.]
-        df[:eval][df[:log10K] .> x] .*= "*"
+        df[!,:eval][df[!,:log10K] .> x] .*= "*"
     end
     df
 end

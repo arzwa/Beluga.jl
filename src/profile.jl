@@ -33,17 +33,18 @@ Profile(X::Matrix{Int64}) = distribute([Profile(X[:,i]) for i=1:size(X)[2]])
 
 # NOTE: the length hack is quite ugly, maybe nicer to have a type for empty
 # (mock) profiles [for sampling from the prior alone in MCMC applications]
-logpdf!(d::DLWGD, p::PArray) = length(p[1].x) == 0 ?
-    0. : mapreduce((x)->logpdf!(x.Lp, d, x.xp), +, p)
+# NOTE: init kwarg is necessary for type stability
+logpdf!(d::DLWGD, p::PArray{T}) where T = length(p[1].x) == 0 ?
+    zero(T) : mapreduce((x)->logpdf!(x.Lp, d, x.xp), +, p, init=zero(T))
 
-logpdf!(n::ModelNode, p::PArray) = length(p[1].x) == 0 ?
-    0. : mapreduce((x)->logpdf!(x.Lp, n, x.xp), +, p)
+logpdf!(n::ModelNode, p::PArray{T}) where T = length(p[1].x) == 0 ?
+    zero(T) : mapreduce((x)->logpdf!(x.Lp, n, x.xp), +, p, init=zero(T))
 
-logpdfroot(n::ModelNode, p::PArray) = length(p[1].x) == 0 ?
-    0. : mapreduce((x)->logpdfroot(x.Lp, n), +, p)
+logpdfroot(n::ModelNode, p::PArray{T}) where T = length(p[1].x) == 0 ?
+    zero(T) : mapreduce((x)->logpdfroot(x.Lp, n), +, p, init=zero(T))
 
-gradient(d::DLWGD, p::PArray) = mapreduce((x)->gradient(d, x.xp), +, p)
-
+gradient(d::DLWGD, p::PArray{T}) where T =
+    mapreduce((x)->gradient(d, x.xp), +, p, init=zeros(T,length(asvector(d))))
 
 # Efficient setting/resetting
 # copyto! approach is slightly faster, but not compatible with arrays of ≠ dims
