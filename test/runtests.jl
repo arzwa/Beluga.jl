@@ -1,4 +1,4 @@
-using Test, Random
+using Test, DataFrames, CSV, Distributions, Random
 using Beluga
 
 Random.seed!(333)

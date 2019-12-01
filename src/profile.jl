@@ -30,21 +30,24 @@ Profile(x::Vector{Int64}, n=length(x), m=maximum(x)+1) =
     Profile(x=x, L=minfs(Float64,m,n))
 Profile(X::Matrix{Int64}) = distribute([Profile(X[:,i]) for i=1:size(X)[2]])
 
-
 # NOTE: the length hack is quite ugly, maybe nicer to have a type for empty
 # (mock) profiles [for sampling from the prior alone in MCMC applications]
-# NOTE: init kwarg is necessary for type stability
+# XXX: There is a problem, we need the init kwarg to have type stability in the
+# mapreduce operation, but the init kwarg does not work with the DArray
+# mapreduce; maybe worthwhile to get an MWE and report an issue? Or more
+# likely its due to some design mistake from my part... As a workaround for now
+# we annotate the output type.
 logpdf!(d::DLWGD, p::PArray{T}) where T = length(p[1].x) == 0 ?
-    zero(T) : mapreduce((x)->logpdf!(x.Lp, d, x.xp), +, p, init=zero(T))
+    zero(T) : mapreduce((x)->logpdf!(x.Lp, d, x.xp), +, p)::T
 
 logpdf!(n::ModelNode, p::PArray{T}) where T = length(p[1].x) == 0 ?
-    zero(T) : mapreduce((x)->logpdf!(x.Lp, n, x.xp), +, p, init=zero(T))
+    zero(T) : mapreduce((x)->logpdf!(x.Lp, n, x.xp), +, p)::T
 
 logpdfroot(n::ModelNode, p::PArray{T}) where T = length(p[1].x) == 0 ?
-    zero(T) : mapreduce((x)->logpdfroot(x.Lp, n), +, p, init=zero(T))
+    zero(T) : mapreduce((x)->logpdfroot(x.Lp, n), +, p)::T
 
 gradient(d::DLWGD, p::PArray{T}) where T =
-    mapreduce((x)->gradient(d, x.xp), +, p, init=zeros(T,length(asvector(d))))
+    mapreduce((x)->gradient(d, x.xp), +, p)::T
 
 # Efficient setting/resetting
 # copyto! approach is slightly faster, but not compatible with arrays of ≠ dims
