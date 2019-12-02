@@ -122,3 +122,17 @@ function show_bayesfactors(df::DataFrame)
         println("_"^78)
     end
 end
+
+# posterior expectations
+function posterior_expectations!(chain)
+    @unpack trace, model = chain
+    for i=2:ne(model)
+        t = parentdist(model[i], nonwgdparent(model[i].p))
+        l = trace[!,Symbol("λ$i")]
+        m = trace[!,Symbol("μ$i")]
+        E = exp.(t*(l .- m))
+        V = E .* (E .- 1.) .* (l .+ m) ./ (l .- m)
+        trace[!,Symbol("E$i")] .= E
+        trace[!,Symbol("V$i")] .= V
+    end
+end
