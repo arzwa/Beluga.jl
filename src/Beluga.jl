@@ -30,5 +30,5 @@ module Beluga
     export RevJumpChain, RevJumpPrior, branchrates!, mcmc!, rjmcmc!
     export IidRevJumpPrior, CoevolRevJumpPrior, extend!, shrink!
     export branch_bayesfactors, UpperBoundedGeometric, get_wgdtrace
-    export Branch, Node, asvector, gradient
+    export Branch, Node, asvector, gradient, init!
 end
