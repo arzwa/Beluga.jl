@@ -47,7 +47,7 @@ logpdfroot(n::ModelNode, p::PArray{T}) where T = length(p[1].x) == 0 ?
     zero(T) : mapreduce((x)->logpdfroot(x.Lp, n), +, p)::T
 
 gradient(d::DLWGD, p::PArray{T}) where T =
-    mapreduce((x)->gradient(d, x.xp), +, p)::T
+    mapreduce((x)->gradient(d, x.xp), +, p)::Vector{T}
 
 # Efficient setting/resetting
 # copyto! approach is slightly faster, but not compatible with arrays of ≠ dims

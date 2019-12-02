@@ -25,13 +25,10 @@ module Beluga
     include("sim.jl")
     include("post.jl")
 
-    export DuplicationLossWGDModel, DLWGD, logpdf, logpdf!, update!
-    export insertwgd!, removewgd!, isawgd, iswgd, isroot, iswgdafter
-    export nonwgdchild, nonwgdparent, parentdist, ne
-    export Profile, PArray, extend!, shrink!, set!, rev!
-    export RevJumpChain, RevJumpPrior, move!, init!, trace!
-    export move_addwgd!, move_rmwgd!, branchrates!, mcmc!, rjmcmc!
-    export IidRevJumpPrior, CoevolRevJumpPrior
+    export DuplicationLossWGDModel, DLWGD, logpdf, logpdf!
+    export insertwgd!, removewgd!, Profile, PArray
+    export RevJumpChain, RevJumpPrior, branchrates!, mcmc!, rjmcmc!
+    export IidRevJumpPrior, CoevolRevJumpPrior, extend!, shrink!
     export branch_bayesfactors, UpperBoundedGeometric, get_wgdtrace
-    export Branch, Node
+    export Branch, Node, asvector, gradient
 end

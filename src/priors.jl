@@ -158,4 +158,4 @@ function logpdf(prior::IidRevJumpPrior, d::DLWGD)
     p + logpdf(πK, k)
 end
 
-scattermat(m::DLWGD, pr::IidRevJumpPrior) = scatermat_iid(m)
+scattermat(m::DLWGD, pr::IidRevJumpPrior) = scattermat_iid(m)

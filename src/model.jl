@@ -104,21 +104,22 @@ function insertwgd!(d::DLWGD{T}, n::N, w::N, a::N) where {T,N<:ModelNode{T}}
     return w
 end
 
-function removewgd!(d::DLWGD, n::ModelNode, reindex::Bool=true)
+function removewgd!(d::DLWGD, n::ModelNode, reindex::Bool=true, set::Bool=true)
     @assert iswgd(n) "Not a WGD node $i"
     @assert haskey(d.nodes, n.i) "Node not in model!"
     parent = n.p
     child = first(first(n))
     delete!(first(n), child)
     delete!(n, first(n))
-    delete!(parent, n)
+    parent.c = setdiff(parent.c, Set([n]))
+    # delete!(parent, n)  # issues! probably because n has changed by now?
     push!(parent, child)
     child.p = parent
     child[:t] += n[:t]
     delete!(d.nodes, n.i)
     delete!(d.nodes, n.i+1)
     reindex ? reindex!(d, n.i+2) : nothing
-    setabove!(nonwgdchild(child))
+    set ? setabove!(nonwgdchild(child)) : nothing
     return child
 end
 
@@ -132,8 +133,9 @@ end
 
 function removewgds!(model::DLWGD)
     for i in getwgds(model)
-        removewgd!(model, model[i])
+        removewgd!(model, model[i], true, false)
     end
+    set!(model)
 end
 
 function insertwgds!(model::DLWGD, wgds::Dict)

@@ -97,11 +97,12 @@ function branchrates!(chain)
     end
 end
 
+# see Lartillot & Poujol 2010
 function posterior_Σ!(chain)
-    @unpack model = chain
-    @unpack Σ₀ = chain.prior
-    chain.trace[:var] = NaN
-    chain.trace[:cov] = NaN
+    @unpack model, prior = chain
+    @unpack Σ₀ = prior
+    chain.trace[!,:var] .= NaN
+    chain.trace[!,:cov] .= NaN
     for row in eachrow(chain.trace)
         m = model(row)
         @unpack A, q, n = scattermat(model, prior)

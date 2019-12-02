@@ -1,6 +1,6 @@
 # Main model tests
 # ================
-import Beluga: csuros_miklos, csuros_miklos!, minfs
+import Beluga: csuros_miklos, csuros_miklos!, minfs, update!
 
 
 @testset "DL model, Csuros & Miklos algorithm" begin
