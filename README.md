@@ -1,6 +1,6 @@
 # Beluga
 
-(name is still WIP, not that convinced of it)
+(name is still WIP, I'm not that convinced)
 
 ## Usage
 
@@ -34,6 +34,9 @@ update!(model[5], (λ=1.5, μ=1.2))
 
 # change η parameter at root
 update!(model[1], (η=0.89))
+
+# or
+update!(model[1], :η, 0.91)
 
 # recompute likelihood efficiently starting from node 5
 l = logpdf!(model[5], profile)
