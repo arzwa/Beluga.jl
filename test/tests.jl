@@ -4,7 +4,7 @@ import Beluga: csuros_miklos, csuros_miklos!, minfs, update!
 
 
 @testset "DL model, Csuros & Miklos algorithm" begin
-    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5)
+    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5, Node)
     L = csuros_miklos(d[1], p[1].x)
     for i=1:length(L[:,1])
         @test isapprox(L[i, 1] , shouldbe1[i], atol=0.0001)
@@ -13,7 +13,7 @@ end
 
 
 @testset "DL+WGD model, Csuros & Miklos + Rabier algorithm" begin
-    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5)
+    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5, Node)
     x = p[1].x
     n = d[3]
     insertwgd!(d, n, 2., 0.5)
@@ -27,7 +27,7 @@ end
 
 @testset "DL model, extend/remove to/from DL+WGD" begin
     # compute lhood, add WGD, partially recompute, remove WGD, recompute again
-    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5)
+    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5, Node)
     x = p[1].x
     L = csuros_miklos(d[1], x)
     for i=1:length(L[:,1])
@@ -52,7 +52,7 @@ end
 
 
 @testset "Partial recomputation (1)" begin
-    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5)
+    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5, Node)
     x = p[1].x
     n = d[3]
     update!(n, :λ, 0.9)
@@ -72,7 +72,7 @@ end
 
 
 @testset "Partial recomputation (2)" begin
-    d, p = DLWGD(s3, df3, 0.2, 0.3, 1/1.5)
+    d, p = DLWGD(s3, df3, 0.2, 0.3, 1/1.5, Node)
     l1 = logpdf!(d, p)
     update!(d[5], :λ, 0.67)
     l2 = logpdf!(d, p)
@@ -92,7 +92,7 @@ end
 
 
 @testset "Insert and remove WGDs" begin
-    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5)
+    d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5, Node)
     insertwgd!(d, d[3], 2., 0.2)
     insertwgd!(d, d[3], 1., 0.3)
     insertwgd!(d, d[2], 1., 0.4)
@@ -115,13 +115,13 @@ end
     r2 = Beta(3, 1/3)
     for i=1:100
         λ, μ, η = exp(rand(r1)), exp(rand(r1)), rand(r2)
-        d, p = DLWGD(s1, df1, λ, μ, η)
+        d, p = DLWGD(s1, df1, λ, μ, η, Node)
         logpdf!(d, p)
     end
     r1 = Normal(0, 5)
     for i=1:100
         λ, η = exp(rand(r1)), rand(r2)
-        d, p = DLWGD(s1, df1, λ, λ, η)
+        d, p = DLWGD(s1, df1, λ, λ, η, Node)
         logpdf!(d, p)
     end
 end
@@ -133,7 +133,7 @@ end
     μ = [0.64, 0.36, 0.25, 0.57, 0.42, 0.49, 0.61, 0.69, 3.92, 0.53]
     η = [0.55, 0.56, 0.93, 0.57, 0.59, 0.06, 0.15, 0.41, 0.96, 0.12]
     for i=1:length(λ)
-        d, p = DLWGD(s3, df3, λ[i], μ[i], η[i])
+        d, p = DLWGD(s3, df3, λ[i], μ[i], η[i], Node)
         l = logpdf!(d, p)
         @test shouldbe3[i] ≈ l
     end
@@ -146,7 +146,7 @@ end
     μ = [0.64, 0.36, 0.25, 0.57, 0.42, 0.49, 0.61, 0.69, 3.92, 0.53]
     η = [0.55, 0.56, 0.93, 0.57, 0.59, 0.06, 0.15, 0.41, 0.96, 0.12]
     for i=1:length(λ)
-        d, p = DLWGD(s3, df3, λ[i], μ[i], η[i])
+        d, p = DLWGD(s3, df3, λ[i], μ[i], η[i], Node)
         l = logpdf!(d, p)
         r = rand(2:length(d), 10)
         wnodes = []

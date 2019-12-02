@@ -158,4 +158,28 @@ function logpdf(prior::IidRevJumpPrior, d::DLWGD)
     p + logpdf(πK, k)
 end
 
+function Base.rand(prior::IidRevJumpPrior, d::DLWGD)
+    @unpack Σ₀, X₀, πη, πq, πK = prior
+    model = deepcopy(d)
+    Σ = rand(InverseWishart(3, Σ₀))
+    r = rand(X₀)
+    for n in prewalk(model[1])
+        if iswgdafter(n)
+            continue
+        elseif iswgd(n)
+            n[:q] = rand(πq)
+        elseif isroot(n)
+            n[:η] = rand(πη)
+            n[:λ] = exp(r[1])
+            n[:μ] = exp(r[2])
+        else
+            θ = exp.(rand(MvNormal(r, Σ)))
+            n[:λ] = θ[1]
+            n[:μ] = θ[2]
+        end
+    end
+    set!(model)
+    return (model=model, Σ=Σ)
+end
+
 scattermat(m::DLWGD, pr::IidRevJumpPrior) = scattermat_iid(m)

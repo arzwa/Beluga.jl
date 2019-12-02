@@ -5,10 +5,11 @@
 ## Usage
 
 ```julia
-using Beluga, CSV, DataFrames
+using Beluga, CSV, DataFrames, Parameters
 
 # get some data
 datadir = "test/data"
+
 tree = open(joinpath(datadir, "plants1.nw"), "r") do f ; readline(f); end
 df = CSV.read(joinpath(datadir, "plants1-100.tsv"), delim=",")
 
@@ -33,9 +34,6 @@ l = logpdf!(model, profile)
 update!(model[5], (λ=1.5, μ=1.2))
 
 # change η parameter at root
-update!(model[1], (η=0.89))
-
-# or
 update!(model[1], :η, 0.91)
 
 # recompute likelihood efficiently starting from node 5
@@ -56,6 +54,24 @@ rand(model)
 
 # simulate an data set of 100 profiles
 rand(model, 100)
+
+# independent rates prior (check & adapt default settings!)
+prior = IidRevJumpPrior()
+logpdf(prior, model)
+
+# sample random model from prior
+@unpack model, Σ = rand(prior, model)
+
+# reversible jump chain
+chain = RevJumpChain(data=profile, model=model, prior=prior)
+
+# run chain (fixed dimension - no reversible jump)
+init!(chain)
+mcmc!(chain, 100, show=1)
+
+# run chain (variable dimensions - with reversible jump)
+rjmcmc!(chain, 100, show=1)
+
 ```
 
 **Notes:**

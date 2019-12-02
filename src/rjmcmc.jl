@@ -38,7 +38,11 @@ end
 function setstate!(state, model)
     K = 0
     for (i, n) in model.nodes
-        K += iswgd(n) ? 1 : 0
+        if iswgd(n)
+            K += 1
+            b = Symbol("k$(nonwgdchild(n).i)")
+            haskey(state, b) ? state[b] += 1 : state[b] = 1
+        end
         for (k, v) in n.x.θ
             k != :t ? state[id(n, k)] = v : nothing
         end

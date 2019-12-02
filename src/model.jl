@@ -15,7 +15,7 @@ Base.getindex(d::DLWGD, i::Int64) = d.nodes[i]
 Base.getindex(d::DLWGD, i::Int64, s::Symbol) = d.nodes[i][s]
 ne(d::DLWGD) = 2*length(d.leaves) - 2  # number of edges ignoring WGDs
 
-function DLWGD(nw::String, df::DataFrame, λ, μ, η, nt::Type=Node)
+function DLWGD(nw::String, df::DataFrame, λ, μ, η, nt::Type=Branch)
     @unpack t, l = readnw(nw)
     M, m = profile(t, l, df)
     d = DLWGD(initmodel(t, l, η, λ, μ, max(3, m), nt)...)
@@ -23,7 +23,7 @@ function DLWGD(nw::String, df::DataFrame, λ, μ, η, nt::Type=Node)
     (model=d, data=Profile(M))
 end
 
-function DLWGD(nw::String, λ, μ, η, nt::Type=Node)
+function DLWGD(nw::String, λ, μ, η, nt::Type=Branch)
     # NOTE: model without data; m should be >= 3, otherwise WGD model breaks
     @unpack t, l = readnw(nw)
     d = DLWGD(initmodel(t, l, η, λ, μ, 3, nt)...)
