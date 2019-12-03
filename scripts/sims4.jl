@@ -73,6 +73,16 @@ function output(chain, x, burnin=1000)
     df
 end
 
+function write_wgds(fname, wgds)
+    open(fname, "w") do f
+        write(f, "wgdnode,branch,q\n")
+        for (k,v) in wgds
+            write(f, "$k,$(v[1]),$(v[2])\n")
+        end
+    end
+end
+
+
 function main()
     isdir(outdir) ? outdir : mkdir(outdir)
     m, p = DLWGD(nw, 2., 2., 0.9, Branch)
@@ -81,6 +91,8 @@ function main()
     c = inference(nw, d, x.wgds, infprior, n)
     out = output(c, x, burnin)
     bfs = branch_bayesfactors(c, burnin)
+    write_wgds(joinpath(outdir,
+        "$(savename(params)).$(simid).wgds.csv"), x.wgds)
     CSV.write(joinpath(outdir,
         "$(savename(params)).$(simid).bfs.csv"), bfs)
     CSV.write(joinpath(outdir,
