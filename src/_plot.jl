@@ -4,7 +4,9 @@ struct TreeLayout
     paths ::Array{Tuple}
 end
 
-function TreeLayout(t::DLWGD)
+TreeLayout(t::DLWGD) = TreeLayout(t[1])
+
+function TreeLayout(t::TreeNode)
     coords = Dict{Int64,Tuple}()
     paths  = Tuple[]
     root = t[1]
@@ -35,19 +37,18 @@ end
 # using luxor
 # import Luxor
 # import Luxor: Point
-function drawtree(tl::TreeLayout)
-    @unpack paths, coords = tl
-    for (a, b) in paths
-        p, q = coords[a], coords[b]
-        path = [Point(p...), Point(p[1], q[2]), Point(q...)]
-        # setblend
-        Luxor.poly(path)
-        Luxor.strokepath()
-    end
-end
+# function drawtree(tl::TreeLayout)
+#     @unpack paths, coords = tl
+#     for (a, b) in paths
+#         p, q = coords[a], coords[b]
+#         path = [Point(p...), Point(p[1], q[2]), Point(q...)]
+#         # setblend
+#         Luxor.poly(path)
+#         Luxor.strokepath()
+#     end
+# end
 
 # using plots
-# using Plots
 function tplot(tl::TreeLayout)
     @unpack paths, coords = tl
     p = Plots.plot(legend=false, grid=false, yticks=false)

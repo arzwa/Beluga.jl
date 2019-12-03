@@ -25,7 +25,7 @@ end
 
 Base.rand(df::DataFrame) = df[rand(1:size(df)[1]),:]
 
-function init!(chain::RevJumpChain; rjump=(1., 10., 0.01))
+function init!(chain::RevJumpChain; rjump=(1., 20., 0.01))
     @unpack data, model, prior, state, props = chain
     setstate!(state, model)
     state[:logp] = logpdf!(model, data)
@@ -37,11 +37,14 @@ end
 
 function setstate!(state, model)
     K = 0
+    for i=2:ne(model)+1
+        state[Symbol("k$i")] = 0
+    end
     for (i, n) in model.nodes
         if iswgd(n)
             K += 1
             b = Symbol("k$(nonwgdchild(n).i)")
-            haskey(state, b) ? state[b] += 1 : state[b] = 1
+            state[b] += 1
         end
         for (k, v) in n.x.θ
             k != :t ? state[id(n, k)] = v : nothing
@@ -98,21 +101,6 @@ function branchrates!(chain)
         m = (trace[id(n, :μ)] .+ trace[id(nonwgdparent(n.p), :μ)]) / 2.
         trace[Symbol("l$i")] = l
         trace[Symbol("m$i")] = m
-    end
-end
-
-# see Lartillot & Poujol 2010
-function posterior_Σ!(chain)
-    @unpack model, prior = chain
-    @unpack Σ₀ = prior
-    chain.trace[!,:var] .= NaN
-    chain.trace[!,:cov] .= NaN
-    for row in eachrow(chain.trace)
-        m = model(row)
-        @unpack A, q, n = scattermat(model, prior)
-        Σ = rand(InverseWishart(q + n, Σ₀ + A))
-        row[:var] = Σ[1,1]
-        row[:cov] = Σ[1,2]
     end
 end
 
@@ -195,8 +183,15 @@ function mcmc!(chain, n; trace=1, show=10)
     end
 end
 
-logmcmc(io::IO, df, n=15) = write(io, "", join([@sprintf("%d,%d",df[1:2]...);
-    [@sprintf("%6.3f", x) for x in Vector(df[3:n])]], ","), " ⋯\n| ")
+function logmcmc(io::IO, df)
+    cols1 = Symbol.(["gen", "k", "k2", "k3"])
+    cols2 = Symbol.(["λ1", "λ2", "λ3", "μ1", "μ2", "μ3"])
+    cols3 = Symbol.(["logp", "logπ", "η1"])
+    write(io, "|", join(
+        [@sprintf("%4d,%3d,%2d,%2d", df[cols1]...);
+        [@sprintf("%6.3f", df[x]) for x in cols2]], ","), " ⋯ ",
+        join([@sprintf("%6.3f", df[x]) for x in cols3], ", "), "\n")
+end
 
 function move!(chain; rootequal::Bool=false)
     @unpack model, prior = chain
@@ -436,9 +431,7 @@ function move_rmwgd!(chain)
         reindex!(chain.props, wgdnode.i+2)
         set!(data)
         setstate!(state, chain.model)
-        s = Symbol("k$(n.i)")
         update!(state, n, :λ)
-        state[s] -= 1
         state[:logp] = l_
         state[:logπ] = p_
         propλ.accepted += 1

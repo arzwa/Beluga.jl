@@ -3,6 +3,17 @@
 Base.rand(d::DLWGD) = DataFrame(sort(profile(simulate(d), d)))
 Base.rand(d::DLWGD, N::Int64) = vcat([rand(d) for i=1:N]...)
 
+function Base.rand(d::DLWGD, N::Int64, condition::Array{Array{T,1},1}) where T
+    dfs = DataFrame[]
+    while length(dfs) < N
+        df = rand(d)
+        if all([sum(df[1,c]) > 0 for c in condition])
+            push!(dfs, df)
+        end
+    end
+    vcat(dfs...)
+end
+
 
 # Simulation
 # ==========

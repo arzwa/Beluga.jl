@@ -87,15 +87,22 @@ function logp_pics(Σ₀, θ)
     log(J) + (q/2)*log(det(Σ₀)) - ((q + n)/2)*log(det(Σ₀ + A))
 end
 
-function Base.rand(prior::CoevolRevJumpPrior, d::DLWGD)
+function Base.rand(prior::CoevolRevJumpPrior, d::DLWGD, k::Int64=-1)
     @unpack Σ₀, X₀, πη, πq, πK = prior
     model = deepcopy(d)
     Σ = rand(InverseWishart(3, Σ₀))
+    k = k < 0 ? rand(prior.πK) : k
+    wgds = Dict()
+    for i=1:k
+        n, t = randpos(model)
+        q = rand(πq)
+        wgdnode = insertwgd!(model, n, t, q)
+        child = nonwgdchild(wgdnode)
+        wgds[wgdnode.i] = (child.i, q)
+    end
     for n in prewalk(model[1])
-        if iswgdafter(n)
+        if isawgd(n)
             continue
-        elseif iswgd(n)
-            n[:q] = rand(πq)
         elseif isroot(n)
             n[:η] = rand(πη)
             r = exp.(rand(X₀))
@@ -110,7 +117,7 @@ function Base.rand(prior::CoevolRevJumpPrior, d::DLWGD)
         end
     end
     set!(model)
-    return (model=model, Σ=Σ)
+    (model=model, Σ=Σ, η=model[1,:η], rates=getrates(model), wgds=wgds)
 end
 
 
@@ -158,28 +165,25 @@ function logpdf(prior::IidRevJumpPrior, d::DLWGD)
     p + logpdf(πK, k)
 end
 
-function Base.rand(prior::IidRevJumpPrior, d::DLWGD)
+function Base.rand(prior::IidRevJumpPrior, d::DLWGD, k::Int64=-1)
     @unpack Σ₀, X₀, πη, πq, πK = prior
     model = deepcopy(d)
+    update!(model[1], :η, rand(πη))
     Σ = rand(InverseWishart(3, Σ₀))
     r = rand(X₀)
-    for n in prewalk(model[1])
-        if iswgdafter(n)
-            continue
-        elseif iswgd(n)
-            n[:q] = rand(πq)
-        elseif isroot(n)
-            n[:η] = rand(πη)
-            n[:λ] = exp(r[1])
-            n[:μ] = exp(r[2])
-        else
-            θ = exp.(rand(MvNormal(r, Σ)))
-            n[:λ] = θ[1]
-            n[:μ] = θ[2]
-        end
+    k = k < 0 ? rand(prior.πK) : k
+    wgds = Dict()
+    for i=1:k
+        n, t = randpos(model)
+        q = rand(πq)
+        wgdnode = insertwgd!(model, n, t, q)
+        child = nonwgdchild(wgdnode)
+        wgds[wgdnode.i] = (child.i, q)
     end
-    set!(model)
-    return (model=model, Σ=Σ)
+    X = rand(X₀)
+    rates = exp.(rand(MvNormal(X, Σ), Beluga.ne(model)+1))
+    setrates!(model, rates)
+    (model=model, Σ=Σ, η=model[1,:η], rates=rates, wgds=wgds)
 end
 
 scattermat(m::DLWGD, pr::IidRevJumpPrior) = scattermat_iid(m)

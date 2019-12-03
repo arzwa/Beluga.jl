@@ -8,10 +8,9 @@
 using Beluga, CSV, DataFrames, Parameters
 
 # get some data
-datadir = "test/data"
-
-tree = open(joinpath(datadir, "plants1.nw"), "r") do f ; readline(f); end
-df = CSV.read(joinpath(datadir, "plants1-100.tsv"), delim=",")
+ddir = "test/data"
+tree = open(joinpath(ddir, "plants1.nw"), "r") do f ; readline(f); end
+df = CSV.read(joinpath(ddir, "plants1-100.tsv"), delim=",")
 
 # construct model and profile
 λ, μ, η = 1.0, 0.92, 0.66
