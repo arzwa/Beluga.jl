@@ -111,8 +111,8 @@ end
 
 function show_bayesfactors(df::DataFrame)
     for d in groupby(df, :branch)
-        @printf "🌲 %2d: " d[:branch][1]
-        println("(", join(string.(d[:clade][1]), ","), ")")
+        @printf "🌲 %2d: " d[1,:branch]
+        println("(", join(string.(d[1,:clade]), ","), ")")
         for (i,r) in enumerate(eachrow(d))
             isnan(r[:p0]) ? continue : nothing
             @printf "[%2d vs. %2d] " i-1 i-2

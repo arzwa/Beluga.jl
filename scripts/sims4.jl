@@ -11,10 +11,11 @@ outdir = "/tmp/sims4test"
 simid  = "1"  # ARGS[1]
 nw     = open("test/data/plants2.nw", "r") do f ; readline(f); end
 clade1 = [:bvu, :sly, :ugi, :cqu]
+rj     = false
 params = (
     r=1.5, σ=0.1, cv=0.99, σ0=0.5,
     qa=2, qb=3, ηa=5, ηb=1, qaa=1, qbb=1,
-    s=.5, ss=0.4, pk=0.1, N=10, n=210, burnin=10)
+    s=.5, ss=0.4, pk=0.1, N=5, n=550, burnin=50)
 @unpack r, σ, cv, σ0, s, ss, ηa, ηb, qa, qaa, qb, qbb, pk, N, n, burnin = params
 
 
@@ -40,7 +41,22 @@ function simulate(model, N, clade1)
     rand(model, N, [clade1,clade2])
 end
 
-function inference(nw, df, wgds, prior, n=6000, nt=Branch)
+function fixed_inference(nw, df, wgds, prior, n=6000, nt=Branch)
+    model, data = DLWGD(nw, df, 1., 1., 0.9, nt)
+    chain = RevJumpChain(data=data, model=deepcopy(model), prior=prior)
+    for (i, wgd) in sort(wgds)
+        wgdnode = insertwgd!(chain.model, chain.model[wgd[1]],
+            rand()*chain.model[wgd[1]][:t], rand())
+        extend!(chain.data, wgd[1])
+    end
+    init!(chain)
+    mcmc!(chain, n, trace=1, show=10)
+    posterior_Σ!(chain)
+    posterior_E!(chain)
+    chain
+end
+
+function rj_inference(nw, df, prior, n=6000, nt=Branch)
     model, data = DLWGD(nw, df, 1., 1., 0.9, nt)
     chain = RevJumpChain(data=data, model=deepcopy(model), prior=prior)
     init!(chain)
@@ -83,23 +99,29 @@ function write_wgds(fname, wgds)
 end
 
 
+# run simulation
 function main()
     isdir(outdir) ? outdir : mkdir(outdir)
     m, p = DLWGD(nw, 2., 2., 0.9, Branch)
     x = rand(simprior, m)
     d = simulate(x.model, N, clade1)
-    c = inference(nw, d, x.wgds, infprior, n)
+    c = rj ? rj_inference(nw, d, infprior, n) :
+             fixed_inference(nw, d, x.wgds, infprior, n)
     out = output(c, x, burnin)
     bfs = branch_bayesfactors(c, burnin)
     write_wgds(joinpath(outdir,
         "$(savename(params)).$(simid).wgds.csv"), x.wgds)
+    CSV.write(joinpath(outdir,
+        "$(savename(params)).$(simid).sim.csv"), out)
+    CSV.write(joinpath(outdir,
+        "$(savename(params)).$(simid).counts.csv"), d)
     CSV.write(joinpath(outdir,
         "$(savename(params)).$(simid).bfs.csv"), bfs)
     CSV.write(joinpath(outdir,
         "$(savename(params)).$(simid).trace.csv"), c.trace)
     JLD.save( joinpath(outdir,
         "$(savename(params)).$(simid).wgdtrace.jld"), "wgds", get_wgdtrace(c))
-    return c
+    return c, out
 end
 
-chain = main()
+chain, out = main()
