@@ -126,7 +126,7 @@ end
 # posterior expectations
 function posterior_E!(chain)
     @unpack trace, model = chain
-    for i=2:ne(model)
+    for i=2:ne(model)+1
         t = parentdist(model[i], nonwgdparent(model[i].p))
         l = trace[!,Symbol("λ$i")]
         m = trace[!,Symbol("μ$i")]
