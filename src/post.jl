@@ -151,3 +151,52 @@ function posterior_Σ!(chain)
         row[:cov] = Σ[1,2]
     end
 end
+
+
+# posterior predictive checks/simulations/tests
+# =============================================
+mutable struct PostPredSim
+    datastats::DataFrame
+    ppstats  ::DataFrame
+end
+
+function PostPredSim(chain, data, n; burnin=1000,
+        lstats=[mean, std, entr], gstats=lstats)
+    N = size(data)[1]
+    @assert burnin < N "burnin ($burnin) < generations ($N)"
+    d1 = pp_simulate(chain, N, n, burnin=burnin, lstats=lstats, gstats=gstats)
+    d2 = sstats(data, lstats, gstats)
+    PostPredSim(d2, d1)
+end
+
+pp_simulate(chain, args...; kwargs...) =
+    pp_simulate(chain.trace, chain.model, args...; kwargs...)
+
+function pp_simulate(trace, model, N, n; burnin=1000,
+        lstats=[mean, std, entr], gstats=lstats)
+    clades = [clade(model, x) for x in model[1].c]
+    trace = trace[burnin+1:end,:]
+    sdf = [sstats(rand(model(rand(trace)), N), lstats, gstats) for i=1:n]
+    vcat(sdf...)
+end
+
+function sstats(df, lstats, gstats)
+    ldf = describe(df, [Pair(x...) for x in zip(Symbol.(lstats), lstats)]...)
+    gdf = flatten(ldf, :variable)
+    for s in gstats
+        gdf[!,Symbol(s)] .= s(vcat(Matrix(df)...))
+    end
+    gdf
+end
+
+entr(x) = entropy(values(freqmap(x)))
+
+function flatten(df::DataFrame, on::Symbol)
+    d = Dict()
+    for r in eachrow(df)
+        for n in names(r)
+            n != on ? d[Symbol("$(r[on])_$n")] = r[n] : continue
+        end
+    end
+    DataFrame(d)
+end

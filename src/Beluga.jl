@@ -12,6 +12,7 @@ module Beluga
     using MCMCChains
     using Printf
     using ForwardDiff
+    using RecipesBase
 
     import Distributions: logpdf, logpdf!, pdf
     import AdaptiveMCMC: ProposalKernel, DecreaseProposal
@@ -31,5 +32,5 @@ module Beluga
     export IidRevJumpPrior, CoevolRevJumpPrior, extend!, shrink!
     export branch_bayesfactors, UpperBoundedGeometric, get_wgdtrace
     export Branch, Node, asvector, gradient, init!, update!
-    export posterior_Σ!, posterior_E!
+    export posterior_Σ!, posterior_E!, PostPredSim
 end

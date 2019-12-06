@@ -408,6 +408,7 @@ end
 
 # gradient, seems to only work in NaN safe mode http://www.juliadiff.org/
 # ForwardDiff.jl/stable/user/advanced/#Fixing-NaN/Inf-Issues-1
+# speed previous implementation, plants2.nw, maximum entry 19 = 1.6 ms
 function gradient(d::DLWGD{T}, x::Vector{Int64}) where T<:Real
     v = asvector(d)
     f = (u) -> logpdf(d(u), x)

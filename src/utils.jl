@@ -37,6 +37,7 @@ treelength(d::DLWGD) = sum([n[:t] for (i,n) in d.nodes])
 id(node::ModelNode, args::Symbol...) = [id(node, s) for s in args]
 id(node::ModelNode, s::Symbol) = Symbol("$s$(node.i)")
 
+clade(m, n) = [m.leaves[x.i] for x in postwalk(n) if haskey(m.leaves, n.i)]
 
 # Trace utilities
 # ===============

@@ -13,10 +13,16 @@ uuid = "7599756a-d2e4-11e9-0d0e-31645f1f853c"
 version = "0.1.0"
 
 [[Arpack]]
-deps = ["BinaryProvider", "Libdl", "LinearAlgebra"]
-git-tree-sha1 = "07a2c077bdd4b6d23a40342a8a108e2ee5e58ab6"
+deps = ["Arpack_jll", "Libdl", "LinearAlgebra"]
+git-tree-sha1 = "2ff92b71ba1747c5fdd541f8fc87736d82f40ec9"
 uuid = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
-version = "0.3.1"
+version = "0.4.0"
+
+[[Arpack_jll]]
+deps = ["Libdl", "OpenBLAS_jll", "Pkg"]
+git-tree-sha1 = "68a90a692ddc0eb72d69a6993ca26e2a923bf195"
+uuid = "68821587-b530-5797-8361-c406ea357684"
+version = "3.5.0+2"
 
 [[ArrayInterface]]
 deps = ["LinearAlgebra", "Requires", "SparseArrays"]
@@ -362,10 +368,10 @@ uuid = "c7f686f2-ff18-58e9-bc7b-31028e88f75d"
 version = "0.3.15"
 
 [[MacroTools]]
-deps = ["Compat", "DataStructures", "Test"]
-git-tree-sha1 = "82921f0e3bde6aebb8e524efc20f4042373c0c06"
+deps = ["DataStructures", "Markdown", "Random"]
+git-tree-sha1 = "e2fc7a55bb2224e203bbd8b59f72b91323233458"
 uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
-version = "0.5.2"
+version = "0.5.3"
 
 [[Markdown]]
 deps = ["Base64"]
@@ -426,11 +432,17 @@ git-tree-sha1 = "1ae707306f6e33dbb37d0742e08828562772b73f"
 uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
 version = "0.11.2"
 
+[[OpenBLAS_jll]]
+deps = ["Libdl", "Pkg"]
+git-tree-sha1 = "87f80e645b1fbf22f7d1f99168abb8ef313d0422"
+uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
+version = "0.3.7+1"
+
 [[Optim]]
 deps = ["Calculus", "DiffEqDiffTools", "FillArrays", "ForwardDiff", "LineSearches", "LinearAlgebra", "NLSolversBase", "NaNMath", "Parameters", "PositiveFactorizations", "Printf", "Random", "SparseArrays", "StatsBase"]
-git-tree-sha1 = "40b6971747c6ddc2f729a08ffe8359f3a736cc18"
+git-tree-sha1 = "f0be7e02848569cd739c21577bd207f094375e67"
 uuid = "429524aa-4258-5aef-a3af-852621145aeb"
-version = "0.19.5"
+version = "0.19.6"
 
 [[OrderedCollections]]
 deps = ["Random", "Serialization", "Test"]

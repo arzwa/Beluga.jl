@@ -62,6 +62,7 @@ logpdf(prior, model)
 @unpack model, Σ = rand(prior, model)
 
 # reversible jump chain
+model, profile = DLWGD(tree, df, λ, μ, η)  
 chain = RevJumpChain(data=profile, model=model, prior=prior)
 
 # run chain (fixed dimension - no reversible jump)
