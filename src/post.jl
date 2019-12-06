@@ -160,27 +160,30 @@ mutable struct PostPredSim
     ppstats  ::DataFrame
 end
 
-function PostPredSim(chain, data, n; burnin=1000,
-        lstats=[mean, std, entr], gstats=lstats)
-    N = size(data)[1]
+PostPredSim(chain::RevJumpChain, data, args...; kwargs...) =
+    PostPredSim(chain.trace, chain.model, data, args...; kwargs...)
+
+function PostPredSim(trace::DataFrame, model::DLWGD, data::DataFrame, n::Int64;
+        burnin=1000, lstats=[mean, std, entr], gstats=lstats)
+    N = size(trace)[1]
     @assert burnin < N "burnin ($burnin) < generations ($N)"
-    d1 = pp_simulate(chain, N, n, burnin=burnin, lstats=lstats, gstats=gstats)
-    d2 = sstats(data, lstats, gstats)
+    d1 = pp_simulate(trace, model, N, n,
+        burnin=burnin, lstats=lstats, gstats=gstats)
+    d2 = sstats(data, lstats=lstats, gstats=gstats)
     PostPredSim(d2, d1)
 end
 
-pp_simulate(chain, args...; kwargs...) =
-    pp_simulate(chain.trace, chain.model, args...; kwargs...)
-
-function pp_simulate(trace, model, N, n; burnin=1000,
-        lstats=[mean, std, entr], gstats=lstats)
+function pp_simulate(trace::DataFrame, model::DLWGD, N::Int64, n::Int64;
+        burnin=1000, lstats=[mean, std, entr], gstats=lstats)
     clades = [clade(model, x) for x in model[1].c]
     trace = trace[burnin+1:end,:]
-    sdf = [sstats(rand(model(rand(trace)), N), lstats, gstats) for i=1:n]
+    # NOTE: could be in parallel!
+    sdf = [sstats(rand(model(rand(trace)), N),
+        lstats=lstats, gstats=gstats) for i=1:n]
     vcat(sdf...)
 end
 
-function sstats(df, lstats, gstats)
+function sstats(df::DataFrame;lstats=[mean, std, entr], gstats=lstats)
     ldf = describe(df, [Pair(x...) for x in zip(Symbol.(lstats), lstats)]...)
     gdf = flatten(ldf, :variable)
     for s in gstats
@@ -199,4 +202,21 @@ function flatten(df::DataFrame, on::Symbol)
         end
     end
     DataFrame(d)
+end
+
+function pp_pvalues(pps::PostPredSim)
+    @unpack datastats, ppstats = pps
+    nrep = size(ppstats)[1]
+    d = Dict{Symbol,Float64}()
+    for n in names(ppstats)
+        x = datastats[1,n]
+        p = length(ppstats[ppstats[!,n] .> x,n])/nrep
+        d[n] = p > 0.5 ? 1. - p : p
+    end
+    df = stack(DataFrame(d))
+    df[!,:eval] .= ""
+    df[df[!,:value] .< 0.05 ,:eval] .= "*"
+    df[df[!,:value] .< 0.01 ,:eval] .= "**"
+    df[df[!,:value] .< 0.001,:eval] .= "***"
+    df
 end
