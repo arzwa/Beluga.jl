@@ -1,6 +1,7 @@
 
-struct TreeLayout
+@with_kw struct TreeLayout
     coords::Dict{Int64,Tuple}
+    values::Dict{Int64,Float64}  = Dict{Int64,Float64}()
     paths ::Array{Tuple}
 end
 
@@ -31,24 +32,10 @@ function TreeLayout(t::TreeNode)
         end
     end
     walk(root)
-    TreeLayout(coords, paths)
+    TreeLayout(coords=coords, paths=paths)
 end
 
-# using luxor
-# import Luxor
-# import Luxor: Point
-# function drawtree(tl::TreeLayout)
-#     @unpack paths, coords = tl
-#     for (a, b) in paths
-#         p, q = coords[a], coords[b]
-#         path = [Point(p...), Point(p[1], q[2]), Point(q...)]
-#         # setblend
-#         Luxor.poly(path)
-#         Luxor.strokepath()
-#     end
-# end
-
-# using plots
+# using plots; the line_z arg could be used for gradients
 function tplot(tl::TreeLayout)
     @unpack paths, coords = tl
     p = Plots.plot(legend=false, grid=false, yticks=false)
@@ -115,6 +102,51 @@ end
             seriestype := vline
             subplot := i
             [p.datastats[1,n]]
+        end
+    end
+    for i=n+1:nrow*ncol
+        @series begin
+            subplot := i
+            seriestype := scatter
+            color := :white
+            alpha := 0.
+            markersize := 0
+            foreground := :white
+            [0], [0]
+        end
+    end
+end
+
+
+@userplot TracePlot
+
+@recipe function f(x::TracePlot; ncol=5, burnin=1000)
+    trace = x.args[1]
+    @assert typeof(trace) == DataFrame "Input should be a data frame!"
+    trace = trace[burnin:end,:]
+    lcols = [col for col in names(trace) if startswith(string(col), "λ")]
+    mcols = [col for col in names(trace) if startswith(string(col), "μ")]
+    n = length(lcols)
+    legend := false
+    xticks := false
+    yticks := false
+    grid   := false
+    nrow = n % ncol == 0 ? n ÷ ncol : (n ÷ ncol) + 1
+    layout := (nrow, ncol)
+    colors = [:black, :salmon]
+    for (i, set) in enumerate([lcols, mcols])
+        for (j, col) in enumerate(set)
+            @series begin
+                linewidth  --> 0.5
+                alpha      --> 0.8
+                color      --> colors[i]
+                seriestype  := :path
+                subplot     := j
+                title       := "\\theta_{$j}"
+                title_loc   := :left
+                titlefont  --> font(8)
+                log.(trace[!,col])
+            end
         end
     end
     for i=n+1:nrow*ncol

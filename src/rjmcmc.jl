@@ -168,6 +168,8 @@ function rjmcmc!(chain, n; trace=1, show=10, rjstart=0, rootequal=false)
             logmcmc(stdout, last(chain.trace))
             flush(stdout)
         end
+        # NOTE: just to be sure there are no rogue nodes in the tree
+        @assert length(chain.model.nodes) == length(postwalk(chain.model[1]))
     end
 end
 
@@ -269,17 +271,18 @@ function move_wgdtime!(chain, n)
     child = first(first(n))
     q = n[:q]
     t1 = n[:t]
-    t = t2 = child[:t]
+    t2 = child[:t]
     u = rand()
     r = 0.
     if u < 0.66  # move q
         q_::Float64, r::Float64 = prop(q)
         n[:q] = q_  # update from child below
+        update!(child, :t, t2)
     elseif u > 0.33  # move t
         t = rand()*(t1 + t2)
         n[:t] = t1 + t2 - t  # update from child below
+        update!(child, :t, t)
     end
-    update!(child, :t, t)
     l_ = logpdf!(n, data)
     p_ = logpdf(prior, model)
     hr = l_ + p_ - state[:logp] - state[:logπ] + r
