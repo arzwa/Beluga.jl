@@ -138,6 +138,9 @@ function removewgds!(model::DLWGD)
     set!(model)
 end
 
+insertwgds!(model::DLWGD, wgds::String) =
+    insertwgds!(model, eval(Meta.parse(wgds)))
+
 function insertwgds!(model::DLWGD, wgds::Dict)
     for (k,v) in wgds
         for wgd in v

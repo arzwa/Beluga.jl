@@ -94,20 +94,27 @@ function branch_bayesfactors(trace::DataFrame, model::DLWGD, p)
         cl = Beluga.clade(model, n)
         df_ = DataFrame(:branch=>i,
             :clade=>repeat([cl], kmax+1),
-            :k=>0:kmax, :eval=>"",
+            :k=>0:kmax, :eval1=>"", :eval2=>"",
             :p1=>ps, :p0=>[NaN ; ps[1:end-1]],
             :π1=>πs, :π0=>[NaN ; πs[1:end-1]],
             :t=>te, :tfrac=>te/T)
         df = vcat(df, df_)
     end
+    df[!,:p2] = by(df, :branch, :p1=>cumsum0)[!,:p1_cumsum0]
+    df[!,:π2] = by(df, :branch, :π1=>cumsum0)[!,:π1_cumsum0]
     # compute BFs
-    df[!,:K] = (df[!,:p1] ./ df[!,:p0]) ./ (df[!,:π1] ./ df[!,:π0])
-    df[!,:log10K] = log10.(df[!,:K])
+    df[!,:K1] = (df[!,:p1] ./ df[!,:p0]) ./ (df[!,:π1] ./ df[!,:π0])
+    df[!,:K2] = (df[!,:p2] ./ df[!,:p0]) ./ (df[!,:π2] ./ df[!,:π0])
+    df[!,:log10K1] = log10.(df[!,:K1])
+    df[!,:log10K2] = log10.(df[!,:K2])
     for x in [0.5, 1., 2.]
-        df[!,:eval][df[!,:log10K] .> x] .*= "*"
+        df[!,:eval1][df[!,:log10K1] .> x] .*= "*"
+        df[!,:eval2][df[!,:log10K2] .> x] .*= "*"
     end
     df
 end
+
+cumsum0(x) = 1 .- vcat(0., cumsum(x)...)[1:end-1]
 
 function show_bayesfactors(df::DataFrame)
     for d in groupby(df, :branch)
@@ -117,7 +124,14 @@ function show_bayesfactors(df::DataFrame)
             isnan(r[:p0]) ? continue : nothing
             @printf "[%2d vs. %2d] " i-1 i-2
             @printf "K = (%.2f/%.2f) ÷ (%.2f/%.2f) " r[:p1] r[:p0] r[:π1] r[:π0]
-            @printf "= %8.3f [log₁₀(K) = %8.3f] %s\n" r[:K] r[:log10K] r[:eval]
+            @printf "= %8.3f [log₁₀(K) = %8.3f] %s\n" r[:K1] r[:log10K1] r[:eval1]
+        end
+        println()
+        for (i,r) in enumerate(eachrow(d))
+            isnan(r[:p0]) ? continue : nothing
+            @printf "[>%1d vs. %2d] " i-1 i-2
+            @printf "K = (%.2f/%.2f) ÷ (%.2f/%.2f) " r[:p2] r[:p0] r[:π2] r[:π0]
+            @printf "= %8.3f [log₁₀(K) = %8.3f] %s\n" r[:K2] r[:log10K2] r[:eval2]
         end
         println("_"^78)
     end
@@ -160,13 +174,14 @@ mutable struct PostPredSim
     ppstats  ::DataFrame
 end
 
-PostPredSim(chain::RevJumpChain, data, args...; kwargs...) =
-    PostPredSim(chain.trace, chain.model, data, args...; kwargs...)
+PostPredSim(chain::RevJumpChain, data, n; kwargs...) =
+    PostPredSim(chain.trace, chain.model, data, n; kwargs...)
 
 function PostPredSim(trace::DataFrame, model::DLWGD, data::DataFrame, n::Int64;
         burnin=1000, lstats=[mean, std, entr], gstats=lstats)
-    N = size(trace)[1]
-    @assert burnin < N "burnin ($burnin) < generations ($N)"
+    N = size(data)[1]
+    ngen = size(trace)[1]
+    @assert burnin < ngen "burnin ($burnin) < generations ($ngen)"
     d1 = pp_simulate(trace, model, N, n,
         burnin=burnin, lstats=lstats, gstats=gstats)
     d2 = sstats(data, lstats=lstats, gstats=gstats)

@@ -5,12 +5,12 @@ using Beluga, Parameters
 
 # branch model
 begin
-    nw = open("test/data/plants1c.nw", "r") do f ; readline(f); end
+    nw = open("test/data/plants2.nw", "r") do f ; readline(f); end
     d, p = DLWGD(nw, 1., 1., 0.9)
     prior = IidRevJumpPrior(
-        Σ₀=[5 4.5 ; 4.5 5],
-        X₀=MvNormal(log.([2,2]), I),
-        πK=Beluga.UpperBoundedGeometric(0.2, 15),
+        Σ₀=[0.5 0. ; 0. 0.5],
+        X₀=MvNormal(log.([1,1]), I),
+        πK=Beluga.UpperBoundedGeometric(0.1, 15),
         πq=Beta(1,1),
         πη=Beta(3,1))
     chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
