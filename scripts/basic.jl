@@ -20,7 +20,7 @@ begin
         data=deepcopy(p), model=deepcopy(d), prior=deepcopy(prior))
 end
 
-init!(chain, qkernel=Beta(1,50))
+init!(chain, qkernel=Uniform(0,0.1))
 rjmcmc!(chain, 1000, trace=1, show=10)
 
 #
