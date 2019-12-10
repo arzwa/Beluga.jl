@@ -27,7 +27,7 @@ data frames (I know, horrible data structure) which is structured as
 """
 function get_wgdtrace(chain::RevJumpChain)
     tr = Dict{Int64,Dict{Int64,DataFrame}}()
-    for d in chain.trace[!,:wgds]
+    for (gen, d) in enumerate(chain.trace[!,:wgds])
         for (k,v) in d
             n = length(v)
             if !haskey(tr, k)
@@ -35,13 +35,14 @@ function get_wgdtrace(chain::RevJumpChain)
             end
             if !haskey(tr[k], n)
                 tr[k][n] = DataFrame(
+                    :gen =>Int64[],
                     [Symbol("q$i")=>Float64[] for i=1:n]...,
                     [Symbol("t$i")=>Float64[] for i=1:n]...)
             end
             sort!(v)
             t = [x[1] for x in v]
             q = [x[2] for x in v]
-            push!(tr[k][n], [q ; t])
+            push!(tr[k][n], vcat(gen, q, t))
         end
     end
     tr

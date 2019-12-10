@@ -117,30 +117,30 @@ end
     end
 end
 
-
 @userplot TracePlot
 
-@recipe function f(x::TracePlot; ncol=5, burnin=1000)
+@recipe function f(x::TracePlot;
+        ncol=5, thin=1, burnin=1000, colors = [:black, :salmon])
     trace = x.args[1]
+    trace[!,:logP] = trace[!,:logπ] .+ trace[!,:logp]
     @assert typeof(trace) == DataFrame "Input should be a data frame!"
-    trace = trace[burnin:end,:]
+    trace = trace[burnin:thin:end,:]
     lcols = [col for col in names(trace) if startswith(string(col), "λ")]
     mcols = [col for col in names(trace) if startswith(string(col), "μ")]
-    n = length(lcols)
+    n = length(lcols) + 3
     legend := false
     xticks := false
     yticks := false
     grid   := false
     nrow = n % ncol == 0 ? n ÷ ncol : (n ÷ ncol) + 1
     layout := (nrow, ncol)
-    colors = [:black, :salmon]
     for (i, set) in enumerate([lcols, mcols])
         for (j, col) in enumerate(set)
             @series begin
                 linewidth  --> 0.5
                 alpha      --> 0.8
                 color      --> colors[i]
-                seriestype  := :path
+                seriestype --> :path
                 subplot     := j
                 title       := "\\theta_{$j}"
                 title_loc   := :left
@@ -149,15 +149,20 @@ end
             end
         end
     end
-    for i=n+1:nrow*ncol
+    j = length(lcols)
+    for (col, lab) in zip([:k, :η1, :logP], ["k", "\\eta", "logP\\(\\theta|X\\)"])
+        j += 1
         @series begin
-            subplot := i
-            seriestype := scatter
-            color := :white
-            alpha := 0.
-            markersize := 0
+            linewidth  --> 0.5
+            alpha      --> 0.8
+            color      --> :black
+            seriestype --> :path
+            subplot     := j
+            title       := lab
+            title_loc   := :left
+            titlefont  --> font(8)
             foreground := :white
-            [0], [0]
+            trace[!,col]
         end
     end
 end

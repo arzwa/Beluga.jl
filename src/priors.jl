@@ -137,11 +137,12 @@ phylogeny.
     πη::U               = Beta(3., 1)
     πq::V               = Beta()
     πK::W               = Geometric(0.5)
+    Tl::Float64
     @assert isposdef(Σ₀)
 end
 
 function logpdf(prior::IidRevJumpPrior, d::DLWGD)
-    @unpack Σ₀, X₀, πη, πq, πK = prior
+    @unpack Σ₀, X₀, πη, πq, πK, Tl = prior
     p = 0.; M = 2; J = 1.; k = 0
     N = ne(d)
     Y = zeros(N, M)
@@ -151,7 +152,7 @@ function logpdf(prior::IidRevJumpPrior, d::DLWGD)
         if iswgdafter(n)
             continue
         elseif iswgd(n)
-            p += logpdf(πq, n[:q])  # what about the time? it is also random?
+            p += logpdf(πq, n[:q]) - log(Tl)
             k += 1
         elseif isroot(n)
             p += logpdf(πη, n[:η])

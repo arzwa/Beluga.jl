@@ -32,5 +32,5 @@ module Beluga
     export IidRevJumpPrior, CoevolRevJumpPrior, extend!, shrink!
     export branch_bayesfactors, UpperBoundedGeometric, get_wgdtrace
     export Branch, Node, asvector, gradient, init!, update!
-    export posterior_Σ!, posterior_E!, PostPredSim, pp_pvalues
+    export posterior_Σ!, posterior_E!, PostPredSim, pp_pvalues, treelength
 end
