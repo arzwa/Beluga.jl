@@ -14,11 +14,13 @@ begin
         X₀=MvNormal(log.(ones(2)), I),
         πK=Beluga.UpperBoundedGeometric(0.1, 20),
         πq=Beta(1,1),
-        πη=Beta(3,1))
-    chain = RevJumpChain(data=deepcopy(p), model=deepcopy(d), prior=deepcopy(prior))
+        πη=Beta(3,1),
+        Tl=treelength(d))
+    chain = RevJumpChain(
+        data=deepcopy(p), model=deepcopy(d), prior=deepcopy(prior))
 end
 
-init!(chain, qkernel=Beta(1,10), λdrop=(δ=0.01, ti=25, stop=0))
+init!(chain, qkernel=Beta(1,50))
 rjmcmc!(chain, 1000, trace=1, show=10)
 
 #
