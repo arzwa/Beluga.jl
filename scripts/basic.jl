@@ -10,17 +10,17 @@ begin
     df = CSV.read(joinpath(ddir, "dicots-f01-100.csv"), delim=",")
     d, p = DLWGD(nw, df, 1., 1., 0.9)
     prior = IidRevJumpPrior(
-        Σ₀=[0.5 0 ; 0 0.5],
-        X₀=MvNormal(log.(ones(2)), I),
+        Σ₀=[0.5 0.45 ; 0.45 0.5],
+        X₀=MvNormal(log.(ones(2)), [0.5 0.45 ; 0.45 0.5]),
         πK=Beluga.UpperBoundedGeometric(0.1, 20),
         πq=Beta(1,1),
         πη=Beta(3,1),
         Tl=treelength(d))
     chain = RevJumpChain(
         data=deepcopy(p), model=deepcopy(d), prior=deepcopy(prior))
+    init!(chain, qkernel=Beta(1,10), λdrop=Exponential())
 end
 
-init!(chain, qkernel=Uniform(0,0.1))
 rjmcmc!(chain, 1000, trace=1, show=10)
 
 #

@@ -27,15 +27,15 @@ end
 Base.rand(df::DataFrame) = df[rand(1:size(df)[1]),:]
 
 function init!(chain::RevJumpChain;
-        qkernel=Beta(1, 20),
-        λdrop=(δ=1e-1, ti=10, stop=0))
+        qkernel=Beta(1, 20), λkernel=Exponential())
+        # λdrop=(δ=1e-1, ti=25, stop=0))
     @unpack data, model, prior, state, props = chain
     setstate!(state, model)
     state[:logp] = logpdf!(model, data)
     state[:logπ] = logpdf(prior, model)
     trace!(chain)
     set!(data)
-    setprops!(props, model, qkernel, λdrop)
+    setprops!(props, model, qkernel, λkernel)
 end
 
 function setstate!(state, model)
@@ -56,7 +56,7 @@ function setstate!(state, model)
     state[:k] = K
 end
 
-function setprops!(props, model, qkernel, λdrop)
+function setprops!(props, model, qkernel, λkernel)
     for (i, n) in model.nodes
         if iswgdafter(n)
             continue
@@ -68,7 +68,10 @@ function setprops!(props, model, qkernel, λdrop)
                 AdaptiveUvProposal(kernel=qkernel,
                     bounds=(0.,1.), tuneinterval=10^10, stop=0,
                     move=AdaptiveMCMC.independent),
-                DecreaseProposal(λdrop.δ, λdrop.ti, λdrop.stop)]
+                AdaptiveUvProposal(kernel=λkernel,
+                    tuneinterval=10^10, stop=0,
+                    move=AdaptiveMCMC.independent)]
+                #DecreaseProposal(λdrop.δ, λdrop.ti, λdrop.stop)]
             props[i] = CoevolUnProposals()
         else
             props[i] = CoevolUnProposals()
@@ -382,15 +385,19 @@ function move_addwgd!(chain)
     n, t  = randpos(chain.model)
     child = nonwgdchild(n)
     propq = chain.props[0][2]
+    propλ = chain.props[0][3]
+    λn    = child[:λ]
     q::Float64, r1::Float64  = propq(0.)
+    θ::Float64 = log(λn) - rand(propλ)
     pprop = logpdf(propq.kernel, q) - log(tlen)
 
+    child[:λ] = exp(θ)
+    # @printf " ⋅ %3.3f → %3.3f\n" λn child[:λ]
     wgdnode = insertwgd!(chain.model, n, t, q)
     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
     l_ = logpdf!(child, data)
     p_ = logpdf(prior, chain.model)
     hr = l_ + p_ - state[:logp] - state[:logπ] - pprop
-
     if log(rand()) < hr
         state[:logp] = l_
         state[:logπ] = p_
@@ -398,13 +405,17 @@ function move_addwgd!(chain)
         s = Symbol("k$(nonwgdchild(wgdnode).i)")
         state[s] = haskey(state, s) ? state[s] + 1 : 1
         update!(state, wgdnode, :q)
+        update!(state, child, :λ)
         set!(data)
         props[wgdnode.i] = [AdaptiveUnitProposal() ; WgdProposals()]
+        propλ.accepted += 1
         propq.accepted += 1
     else
+        child[:λ] = λn
         removewgd!(chain.model, wgdnode)
         rev!(data)
     end
+    propλ.total += 1
     return
 end
 
@@ -413,14 +424,21 @@ function move_rmwgd!(chain)
     if nwgd(chain.model) == 0
         return
     end
+    propq = chain.props[0][2]
+    propλ = chain.props[0][3]
     wgdnode = randwgd(chain.model)
     wgdafter = first(wgdnode)
+    n  = nonwgdchild(wgdnode)
+    λn = n[:λ]
+    θ::Float64 = log(λn) + rand(propλ)
+    # θ::Float64, r1::Float64  = propλ(log(λn))
+    # θ  = log(λn) - (θ - log(λn))  # HACK to reverse decrease proposal
+    n[:λ] = exp(θ)
     child = removewgd!(chain.model, wgdnode, false)
-    propq = chain.props[0][2]
     pprop = logpdf(propq.kernel, wgdnode[:q]) - log(tlen)
     # pprop = 0.
 
-    l_ = logpdf!(child, data)
+    l_ = logpdf!(n, data)
     p_ = logpdf(prior, chain.model)
     hr = l_ + p_ - state[:logp] - state[:logπ] + pprop
     if log(rand()) < hr
@@ -432,12 +450,16 @@ function move_rmwgd!(chain)
         reindex!(chain.props, wgdnode.i+2)
         set!(data)
         setstate!(state, chain.model)
+        update!(state, n, :λ)
         state[:logp] = l_
         state[:logπ] = p_
+        propλ.accepted += 1
     else
+        n[:λ] = λn
         insertwgd!(chain.model, child, wgdnode, wgdafter)
         rev!(data)
     end
+    propλ.total += 1
     return
 end
 
@@ -522,67 +544,4 @@ end
 #         rev!(data)
 #     end
 #     return
-# end
-
-# function _move_addwgd!(chain::RevJumpChain{T,}) where T
-#     # XXX unpack copies the model or something??
-#     @unpack data, state, model, props, prior = chain
-#     n, t = randpos(chain.model)
-#     wgdnode = insertwgd!(chain.model, n, t, rand(prior.πq)/10.)
-#     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
-#     l_ = logpdf!(n, data)
-#     p_ = logpdf(prior, chain.model)
-#     # hr = state[:k] == 0 ? log(0.5) : 0.  # see Rabosky
-#     # if we use the move where a removal or addition is chosen with P=0.5, this
-#     # is not necessary as q(M0|M1) = q(M1|M0) = 0.5
-#     hr = l_ + p_ - state[:logp] - state[:logπ]
-#     if log(rand()) < hr
-#         state[:logp] = l_
-#         state[:logπ] = p_
-#         state[:k] += 1
-#         s = Symbol("k$(nonwgdchild(wgdnode).i)")
-#         state[s] = haskey(state, s) ? state[s] + 1 : 1
-#         update!(state, wgdnode, :q)
-#         set!(data)
-#         props[wgdnode.i] = [AdaptiveUnitProposal() ; WgdProposals()]
-#     else
-#         removewgd!(chain.model, wgdnode)
-#         rev!(data)
-#     end
-# end
-
-# function _move_rmwgd!(chain::RevJumpChain{T,IidRevJumpPrior}) where T
-#     @unpack data, state, model, props, prior = chain
-#     if nwgd(chain.model) == 0
-#         return
-#     end
-#     # _model = deepcopy(chain.model)  # TODO find solution
-#     wgdnode = randwgd(chain.model)
-#     wgdafter = first(wgdnode)
-#     child = removewgd!(chain.model, wgdnode, false)
-#     l_ = logpdf!(child, data)
-#     p_ = logpdf(prior, chain.model)
-#     hr = l_ + p_ - state[:logp] - state[:logπ]
-#     if log(rand()) < hr
-#         # upon acceptance; shrink and reindex
-#         length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)
-#         delete!(props, wgdnode.i)
-#         delete!(state, id(wgdnode, :q))
-#         reindex!(chain.model, wgdnode.i+2)
-#         reindex!(chain.props, wgdnode.i+2)
-#         set!(data)
-#         setstate!(state, chain.model)
-#         s = Symbol("k$(nonwgdchild(child).i)")
-#         state[s] -= 1
-#         state[:logp] = l_
-#         state[:logπ] = p_
-#     else
-#         # re-inserting instead of the deepcopy above is tricky, since we insert
-#         # a node at the end, which may be a different index; if we refactor
-#         # removewgd to not reindex, we could re-insert the original wgdnode
-#         # upon rejection, re-insert the original node
-#         insertwgd!(chain.model, child, wgdnode, wgdafter)
-#         # chain.model = _model
-#         rev!(data)
-#     end
 # end

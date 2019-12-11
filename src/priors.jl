@@ -32,6 +32,8 @@ Base.rand(d::UpperBoundedGeometric) = rand(d.d)
 pdf(d::UpperBoundedGeometric, x::Int64) = pdf(d.d, x)
 logpdf(d::UpperBoundedGeometric, x::Int64) = logpdf(d.d, x)
 
+struc
+
 
 # Coevol-like Prior
 # =================

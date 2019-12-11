@@ -58,6 +58,12 @@ function kbranch_prior(k, t, T, prior::UpperBoundedGeometric)
     sum([binomial(i, k)*f^k*(1. - f)^(i-k)*pdf(prior, i) for i=k:kmax])
 end
 
+function kbranch_prior(k, t, T, prior::DiscreteUniform)
+    kmax = prior.b
+    f = t/T
+    sum([binomial(i, k)*f^k*(1. - f)^(i-k)*pdf(prior, i) for i=k:kmax])
+end
+
 # closed form under Geometric prior
 function kbranch_prior(k, t, T, prior::Geometric)
     p = prior.p
