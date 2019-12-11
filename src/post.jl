@@ -167,7 +167,7 @@ function posterior_Σ!(chain)
     chain.trace[!,:cov]  .= NaN
     for row in eachrow(chain.trace)
         m = model(row)
-        @unpack A, q, n = scattermat(model, prior)
+        @unpack A, q, n = scattermat(m, prior)
         Σ = rand(InverseWishart(q + n, Σ₀ + A))
         row[:varλ] = Σ[1,1]
         row[:varμ] = Σ[2,2]

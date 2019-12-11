@@ -12,7 +12,7 @@ begin
     prior = IidRevJumpPrior(
         Σ₀=[0.5 0.45 ; 0.45 0.5],
         X₀=MvNormal(log.(ones(2)), [0.5 0.45 ; 0.45 0.5]),
-        πK=Beluga.UpperBoundedGeometric(0.1, 20),
+        πK=DiscreteUniform(0,20),
         πq=Beta(1,1),
         πη=Beta(3,1),
         Tl=treelength(d))
