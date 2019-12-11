@@ -162,14 +162,16 @@ end
 function posterior_Σ!(chain)
     @unpack model, prior = chain
     @unpack Σ₀ = prior
-    chain.trace[!,:var] .= NaN
-    chain.trace[!,:cov] .= NaN
+    chain.trace[!,:varλ] .= NaN
+    chain.trace[!,:varμ] .= NaN
+    chain.trace[!,:cov]  .= NaN
     for row in eachrow(chain.trace)
         m = model(row)
         @unpack A, q, n = scattermat(model, prior)
         Σ = rand(InverseWishart(q + n, Σ₀ + A))
-        row[:var] = Σ[1,1]
-        row[:cov] = Σ[1,2]
+        row[:varλ] = Σ[1,1]
+        row[:varμ] = Σ[2,2]
+        row[:cov]  = Σ[1,2]
     end
 end
 
