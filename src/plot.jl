@@ -75,17 +75,15 @@ function tplot(d::DLWGD)
     p
 end
 
-
 # Posterior predictive histograms plot recipe
-@recipe function f(p::Beluga.PostPredSim; ncol=5,
+@recipe function f(p::Beluga.PostPredSim;
         vlinecolor=:salmon, vlinewidth=2)
     legend --> false
     xticks --> false
     yticks --> false
     grid   --> false
     n = length(names(p.ppstats))
-    nrow = n % ncol == 0 ? n ÷ ncol : (n ÷ ncol) + 1
-    layout := (nrow, ncol)
+    layout := n
     for (i,n) in enumerate(sort(names(p.ppstats)))
         @series begin
             linewidth --> 1
@@ -97,22 +95,15 @@ end
         end
 
         @series begin
+            title := join(split(string(n), "_"), " ")
+            title_loc := :left
+            titlefont := font(8)
+            foreground := :white
             linewidth := vlinewidth
             color := vlinecolor
             seriestype := vline
             subplot := i
             [p.datastats[1,n]]
-        end
-    end
-    for i=n+1:nrow*ncol
-        @series begin
-            subplot := i
-            seriestype := scatter
-            color := :white
-            alpha := 0.
-            markersize := 0
-            foreground := :white
-            [0], [0]
         end
     end
 end

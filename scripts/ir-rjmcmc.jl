@@ -1,33 +1,40 @@
 # This should be a script for non-julia users to run the rjMCMC as in my paper
-env_dir = "/home/arzwa/dev/Beluga/"
-using Pkg; Pkg.activate(env_dir)
+# ______________________________________________________________________________
+using Distributed
+@everywhere env_dir = "."
+@everywhere using Pkg; @everywhere Pkg.activate(env_dir)
 using DataFrames, CSV, Distributions, Parameters, JLD
-using Beluga
+@everywhere using Beluga
 
 # configuration ________________________________________________________________
-# this could end up in an argparse ind of thing
-treefile = "test/data/plants2.nw"
-datafile = "test/data/dicots-f01-100.csv"
-outdir   = "/tmp/irmcmc"
-niter    = Inf
-burnin   = 1000
-saveiter = 2500
-ppsiter  = saveiter
-params   = (
-    theta0 = 1.5, sigma0 = 0.5, cov0 = 0.0,
-    sigma  = 0.5, cov    = 0.45,
-    qa     = 1.0, qb     = 1.0,
-    etaa   = 3.0, etab   = 1.0,
-    pk     = 0.0, bnd    =  20,
-    qka    = 1.0, qkb    =  5,
-    lak    = 1.0
+# this could end up in an argparse kind of thing
+config = (
+    treefile = "test/data/plants2.nw",
+    datafile = "test/data/dicots-f01-100.csv",
+    outdir   = "/tmp/irmcmc",
+    niter    = 11000,
+    burnin   = 1000,
+    saveiter = 2500,
+    ppsiter  = 2500,
+    theta0   = 1.5, sigma0 = 0.5, cov0 = 0.45,
+    sigma    = 1.0, cov    = 0.9,
+    qa       = 1.0, qb     = 1.0,
+    etaa     = 3.0, etab   = 1.0,
+    pk       = DiscreteUniform(0, 20),
+    qkernel  = Uniform(1,1),
+    λkernel  = Exponential(10^-7),
+    expected = LogNormal(log(1), 0.2)
 )
 
 # script _______________________________________________________________________
+@unpack treefile, datafile, outdir = config
+@unpack niter, burnin, saveiter, ppsiter = config
+@unpack theta0, sigma0, cov0, cov, sigma = config
+@unpack etaa, etab, qa, qb, pk, qkernel, λkernel, expected = config
 isdir(outdir) ? nothing : mkdir(outdir)
-@info "params" params
-@unpack theta0, sigma0, cov0, cov, sigma = params
-@unpack etaa, etab, qa, qb, pk, bnd, qka, qkb, lak = params
+@info "config" config
+open(joinpath(outdir, "config.txt"), "w") do f; write(f, string(config)); end
+
 nw = open(treefile, "r") do f ; readline(f); end
 df = CSV.read(datafile, delim=",")
 d, p = DLWGD(nw, df, theta0, theta0, 0.9, Branch)
@@ -36,13 +43,14 @@ d, p = DLWGD(nw, df, theta0, theta0, 0.9, Branch)
 prior = IidRevJumpPrior(
     Σ₀=[sigma cov ; cov sigma],
     X₀=MvNormal(log.([theta0, theta0]), [sigma0 cov0 ; cov0 sigma0]),
-    πK=pk == 0 ? DiscreteUniform(0, bnd) : UpperBoundedGeometric(p, bnd),
+    πK=pk,
     πq=Beta(qa,qb),
     πη=Beta(etaa,etab),
-    Tl=treelength(d))
+    Tl=treelength(d),
+    πE=expected)
 
 chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
-Beluga.init!(chain, qkernel=Beta(qka, qkb), λkernel=Exponential(lak))
+Beluga.init!(chain, qkernel=qkernel, λkernel=λkernel)
 
 function main(chain, outdir, niter, burnin, saveiter, ppsiter)
     gen = 0
@@ -67,4 +75,7 @@ function main(chain, outdir, niter, burnin, saveiter, ppsiter)
     return chain
 end
 
+# run it _______________________________________________________________________
 chain = main(chain, outdir, niter, burnin, saveiter, ppsiter)
+
+# ______________________________________________________________________________

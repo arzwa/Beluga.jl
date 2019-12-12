@@ -131,18 +131,19 @@ covariance 2×2 matrix. Crucially, this is defined for the `Branch` based model,
 i.e. states at model nodes are assumed to be states at *branches* of the
 phylogeny.
 """
-@with_kw struct IidRevJumpPrior{T,U,V,W} <: RevJumpPrior
+@with_kw struct IidRevJumpPrior{T,U,V,W,X} <: RevJumpPrior
     Σ₀::Matrix{Float64} = [1 0. ; 0. 1]
     X₀::T               = MvNormal([1., 1.])
     πη::U               = Beta(3., 1)
     πq::V               = Beta()
     πK::W               = Geometric(0.5)
+    πE::X               = nothing
     Tl::Float64
     @assert isposdef(Σ₀)
 end
 
 function logpdf(prior::IidRevJumpPrior, d::DLWGD{T}) where T<:Real
-    @unpack Σ₀, X₀, πη, πq, πK, Tl = prior
+    @unpack Σ₀, X₀, πη, πq, πK, Tl, πE = prior
     p = 0.; M = 2; J = 1.; k = 0
     N = ne(d)
     Y = zeros(T, N, M)
@@ -158,8 +159,13 @@ function logpdf(prior::IidRevJumpPrior, d::DLWGD{T}) where T<:Real
             p += logpdf(πη, n[:η])
             p += logpdf(X₀, X0)
         else
-            Y[i-1,:] = log.(n[:λ, :μ]) - X0
+            rates = n[:λ, :μ]
+            Y[i-1,:] = log.(rates) - X0
             A += Y[i-1,:]*Y[i-1,:]'
+            if πE != nothing
+                t  = parentdist(n, nonwgdparent(n.p))
+                p += logpdf(πE, expectedX(rates[1], rates[2], t))
+            end
         end
     end
     p += logp_pics(Σ₀, (Y=Y, J=1., A=A, q=M+1, n=N))
@@ -188,6 +194,8 @@ function Base.rand(prior::IidRevJumpPrior, d::DLWGD, k::Int64=-1)
 end
 
 scattermat(m::DLWGD, pr::IidRevJumpPrior) = scattermat_iid(m)
+
+expectedX(λ, μ, t, X0=1) = X0*exp(t*(λ - μ))
 
 function gradient(pr::IidRevJumpPrior, m::DLWGD{T}) where T<:Real
     v = asvector(m)

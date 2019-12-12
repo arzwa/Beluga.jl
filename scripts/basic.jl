@@ -6,8 +6,8 @@ using Beluga, Parameters
 # branch model
 begin
     ddir = "test/data"
-    nw = open(joinpath(ddir, "plants2.nw"), "r") do f ; readline(f); end
-    df = CSV.read(joinpath(ddir, "dicots-f01-100.csv"), delim=",")
+    nw = open("test/data/plants2.nw", "r") do f ; readline(f); end
+    df = CSV.read("test/data/dicots-f01-100.csv", delim=",")
     d, p = DLWGD(nw, df, 1., 1., 0.9)
     prior = IidRevJumpPrior(
         Σ₀=[0.5 0.45 ; 0.45 0.5],
