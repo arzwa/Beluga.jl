@@ -388,8 +388,9 @@ function move_addwgd!(chain)
     propλ = chain.props[0][3]
     λn    = child[:λ]
     q::Float64, r1::Float64  = propq(0.)
-    θ::Float64 = log(λn) - rand(propλ)
-    pprop = logpdf(propq.kernel, q) - log(tlen)
+    u::Float64 = rand(propλ)
+    θ = log(λn) - u
+    pprop = logpdf(propq.kernel, q) - log(tlen) #+ logpdf(propλ.kernel, u)
 
     child[:λ] = exp(θ)
     # @printf " ⋅ %3.3f → %3.3f\n" λn child[:λ]
@@ -430,14 +431,13 @@ function move_rmwgd!(chain)
     wgdafter = first(wgdnode)
     n  = nonwgdchild(wgdnode)
     λn = n[:λ]
-    θ::Float64 = log(λn) + rand(propλ)
-    # θ::Float64, r1::Float64  = propλ(log(λn))
-    # θ  = log(λn) - (θ - log(λn))  # HACK to reverse decrease proposal
-    n[:λ] = exp(θ)
-    child = removewgd!(chain.model, wgdnode, false)
-    pprop = logpdf(propq.kernel, wgdnode[:q]) - log(tlen)
+    u::Float64 = rand(propλ)
+    θ = log(λn) + u
+    pprop = logpdf(propq.kernel, wgdnode[:q]) - log(tlen) #+ logpdf(propλ.kernel, u)
     # pprop = 0.
 
+    n[:λ] = exp(θ)
+    child = removewgd!(chain.model, wgdnode, false)
     l_ = logpdf!(n, data)
     p_ = logpdf(prior, chain.model)
     hr = l_ + p_ - state[:logp] - state[:logπ] + pprop

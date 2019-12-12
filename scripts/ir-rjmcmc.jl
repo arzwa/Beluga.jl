@@ -17,13 +17,13 @@ config = (
     saveiter = 2500,
     ppsiter  = 2500,
     theta0   = 1.5, sigma0 = 0.5, cov0 = 0.45,
-    sigma    = 1.0, cov    = 0.9,
+    sigma    = 1.0, cov    = 0.0,
     qa       = 1.0, qb     = 1.0,
     etaa     = 3.0, etab   = 1.0,
     pk       = DiscreteUniform(0, 20),
-    qkernel  = Uniform(1,1),
-    λkernel  = Exponential(10^-7),
-    expected = LogNormal(log(1), 0.2)
+    qkernel  = Beta(1,1),
+    λkernel  = Exponential(1),
+    expected = LogNormal(log(1), 0.01)
 )
 
 # script _______________________________________________________________________
