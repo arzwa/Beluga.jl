@@ -141,12 +141,12 @@ phylogeny.
     @assert isposdef(Σ₀)
 end
 
-function logpdf(prior::IidRevJumpPrior, d::DLWGD)
+function logpdf(prior::IidRevJumpPrior, d::DLWGD{T}) where T<:Real
     @unpack Σ₀, X₀, πη, πq, πK, Tl = prior
     p = 0.; M = 2; J = 1.; k = 0
     N = ne(d)
-    Y = zeros(N, M)
-    A = zeros(M,M)
+    Y = zeros(T, N, M)
+    A = zeros(T, M, M)
     X0 = log.(d[1][:λ, :μ])
     for (i, n) in d.nodes
         if iswgdafter(n)
@@ -188,3 +188,10 @@ function Base.rand(prior::IidRevJumpPrior, d::DLWGD, k::Int64=-1)
 end
 
 scattermat(m::DLWGD, pr::IidRevJumpPrior) = scattermat_iid(m)
+
+function gradient(pr::IidRevJumpPrior, m::DLWGD{T}) where T<:Real
+    v = asvector(m)
+    f = (u) -> logpdf(pr, m(u))
+    g = ForwardDiff.gradient(f, v)
+    return g::Vector{Float64}
+end

@@ -18,7 +18,7 @@ begin
         Tl=treelength(d))
     chain = RevJumpChain(
         data=deepcopy(p), model=deepcopy(d), prior=deepcopy(prior))
-    init!(chain, qkernel=Beta(1,10), λdrop=Exponential())
+    init!(chain, qkernel=Beta(1,10), λkernel=Exponential())
 end
 
 rjmcmc!(chain, 1000, trace=1, show=10)
