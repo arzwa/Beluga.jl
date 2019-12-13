@@ -10,18 +10,32 @@ begin
     df = CSV.read("test/data/dicots-f01-100.csv", delim=",")
     d, p = DLWGD(nw, df, 1., 1., 0.9)
     prior = IidRevJumpPrior(
-        Σ₀=[0.5 0.45 ; 0.45 0.5],
+        Σ₀=[1 0. ; 0. 1],
         X₀=MvNormal(log.(ones(2)), [0.5 0.45 ; 0.45 0.5]),
-        πK=DiscreteUniform(0,20),
+        # πK=DiscreteUniform(0,20),
+        πK=Geometric(0.2),
         πq=Beta(1,1),
         πη=Beta(3,1),
         Tl=treelength(d))
+        # πE=LogNormal(1, 0.2))
     chain = RevJumpChain(
         data=deepcopy(p), model=deepcopy(d), prior=deepcopy(prior))
-    init!(chain, qkernel=Beta(1,10), λkernel=Exponential())
+    init!(chain, qkernel=Beta(1,1), λkernel=Exponential(0.1))
 end
 
 rjmcmc!(chain, 1000, trace=1, show=10)
+
+ks = []
+for l = exp10.(-3:1), β in [1, 5, 10, 20]
+    chain = RevJumpChain(
+        data=deepcopy(p), model=deepcopy(d), prior=deepcopy(prior))
+    init!(chain, qkernel=Beta(1,β), λkernel=Exponential(l))
+    rjmcmc!(chain, 500, trace=1, show=100)
+    pq = chain.props[0][2]
+    pλ = chain.props[0][3]
+    @show pq.accepted / pq.total, pλ.accepted/pλ.total, l, β
+    push!(ks, deepcopy(chain.props))
+end
 
 #
 # ks = []

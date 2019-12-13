@@ -136,7 +136,7 @@ function show_bayesfactors(df::DataFrame)
         println()
         for (i,r) in enumerate(eachrow(d))
             isnan(r[:p0]) ? continue : nothing
-            @printf "[>%1d vs. %2d] " i-1 i-2
+            @printf "[≥%1d vs. %2d] " i-1 i-2
             @printf "K = (%.2f/%.2f) ÷ (%.2f/%.2f) " r[:p2] r[:p0] r[:π2] r[:π0]
             @printf "= %8.3f [log₁₀(K) = %8.3f] %s\n" r[:K2] r[:log10K2] r[:eval2]
         end

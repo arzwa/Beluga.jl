@@ -9,8 +9,9 @@ using DataFrames, CSV, Distributions, Parameters, JLD
 # configuration ________________________________________________________________
 # this could end up in an argparse kind of thing
 config = (
-    treefile = "test/data/plants2.nw",
-    datafile = "test/data/dicots-f01-100.csv",
+    treefile = "test/data/sim100/plants2.nw",
+    datafile = "test/data/sim100/set6_c10_counts.csv",
+    # datafile = "test/data/dicots/dicots-f01-100.csv",
     outdir   = "/tmp/irmcmc",
     niter    = 11000,
     burnin   = 1000,
@@ -18,12 +19,12 @@ config = (
     ppsiter  = 2500,
     theta0   = 1.5, sigma0 = 0.5, cov0 = 0.45,
     sigma    = 1.0, cov    = 0.0,
-    qa       = 1.0, qb     = 1.0,
+    qa       = 1.0, qb     = 3.0,
     etaa     = 3.0, etab   = 1.0,
     pk       = DiscreteUniform(0, 20),
-    qkernel  = Beta(1,1),
-    λkernel  = Exponential(1),
-    expected = LogNormal(log(1), 0.01)
+    qkernel  = Beta(1,3),
+    λkernel  = Exponential(0.001),
+    expected = LogNormal(log(1), 0.1)
 )
 
 # script _______________________________________________________________________
