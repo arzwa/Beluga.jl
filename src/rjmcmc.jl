@@ -132,9 +132,9 @@ end
 # Custom Proposals
 # ================
 # Extension of AdaptiveMCMC lib, proposal moves for vectors [q, λ, μ]
-WgdProposals(ϵ=[1.0, 1.0, 1.0, 1.0], ti=25) = AdaptiveUvProposal[
+WgdProposals(ϵ=[1.0, 1.0, 1.0], ti=25) = AdaptiveUvProposal[
     AdaptiveUvProposal(kernel=Uniform(-e, e), tuneinterval=ti, move=m)
-        for (m, e) in zip([wgdrw, wgdrand, wgdiid, wgdqλ], ϵ)]
+        for (m, e) in zip([wgdrw, wgdrand, wgdiid], ϵ)]
 
 function wgdrw(k::AdaptiveUvProposal, x::Vector{Float64})
     xp = x .+ rand(k)
@@ -320,40 +320,6 @@ function move_wgdtime!(chain, n)
 end
 
 move_wgdrates!(chain, n) = move_wgdrates!(chain, chain.prior, n)
-
-function move_wgdrates!(chain, prior::CoevolRevJumpPrior, n)
-    @unpack data, state, model, props, prior = chain
-    q = n[:q]
-    parent = nonwgdparent(n)
-    child = nonwgdchild(n)
-    flank = rand([parent, child])
-    rates = flank[:λ, :μ]
-    v = [q; log.(rates)]
-    prop = rand(props[n.i][2:end])
-    w::Vector{Float64}, r::Float64 = prop(v)
-    n[:q] = w[1]
-    flank[:λ] = exp(w[2])
-    flank[:μ] = exp(w[3])
-    update!(child)
-    l_ = logpdf!(child, data)  # this was n instead of child, but that doesn't
-                               # work right? 16/12/2019
-    p_ = logpdf(prior, model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] + r
-    if log(rand()) < hr
-        update!(state, n, :q)
-        update!(state, flank, :λ, :μ)
-        state[:logp] = l_
-        state[:logπ] = p_
-        set!(data)
-        prop.accepted += 1
-    else
-        n[:q] = q
-        flank[:λ] = rates[1]
-        flank[:μ] = rates[2]
-        update!(child)
-        rev!(data)
-    end
-end
 
 function move_wgdrates!(chain, prior::IidRevJumpPrior, n)
     @unpack data, state, model, props, prior = chain
@@ -650,4 +616,39 @@ end
 #         rev!(data)
 #     end
 #     return
+# end
+
+#
+# function move_wgdrates!(chain, prior::CoevolRevJumpPrior, n)
+#     @unpack data, state, model, props, prior = chain
+#     q = n[:q]
+#     parent = nonwgdparent(n)
+#     child = nonwgdchild(n)
+#     flank = rand([parent, child])
+#     rates = flank[:λ, :μ]
+#     v = [q; log.(rates)]
+#     prop = rand(props[n.i][2:end])
+#     w::Vector{Float64}, r::Float64 = prop(v)
+#     n[:q] = w[1]
+#     flank[:λ] = exp(w[2])
+#     flank[:μ] = exp(w[3])
+#     update!(child)
+#     l_ = logpdf!(child, data)  # this was n instead of child, but that doesn't
+#                                # work right? 16/12/2019
+#     p_ = logpdf(prior, model)
+#     hr = l_ + p_ - state[:logp] - state[:logπ] + r
+#     if log(rand()) < hr
+#         update!(state, n, :q)
+#         update!(state, flank, :λ, :μ)
+#         state[:logp] = l_
+#         state[:logπ] = p_
+#         set!(data)
+#         prop.accepted += 1
+#     else
+#         n[:q] = q
+#         flank[:λ] = rates[1]
+#         flank[:μ] = rates[2]
+#         update!(child)
+#         rev!(data)
+#     end
 # end

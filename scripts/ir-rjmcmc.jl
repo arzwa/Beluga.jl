@@ -20,10 +20,10 @@ config = (
     ppsiter  = 2500,
     theta0   = 1.5, sigma0 = 0.5, cov0 = 0.45,
     sigma    = 1.0, cov    = 0.0,
-    qa       = 1.0, qb     = 5.0,
+    qa       = 1.0, qb     = 1.0,
     etaa     = 3.0, etab   = 1.0,
     pk       = DiscreteUniform(0, 20),
-    qkernel  = Beta(1,5),
+    qkernel  = Beta(1,1),
     expected = LogNormal(log(1), 0.1),
     wgds     = [
             (lca="ath", t=rand(), q=rand()),
