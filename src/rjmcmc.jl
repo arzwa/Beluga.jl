@@ -122,6 +122,15 @@ function tracewgds(chain)
     d
 end
 
+# add WGDs from array of named tuples e.g. (lca="ath,cpa", t=rand(), q=rand())
+function addwgds!(m::DLWGD, p::PArray, config::Array)
+    for x in config
+        n = lca_node(m, Symbol.(split(x.lca, ","))...)
+        insertwgd!(m, n, n[:t]*x.t, x.q)
+        extend!(p, n.i)
+    end
+end
+
 
 # Custom Proposals
 # ================

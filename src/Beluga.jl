@@ -28,7 +28,7 @@ module Beluga
     # include("plot.jl")
 
     export DuplicationLossWGDModel, DLWGD, logpdf, logpdf!
-    export insertwgd!, removewgd!, Profile, PArray
+    export insertwgd!, removewgd!, Profile, PArray, addwgds!
     export RevJumpChain, RevJumpPrior, branchrates!, mcmc!, rjmcmc!
     export IidRevJumpPrior, CoevolRevJumpPrior, extend!, shrink!
     export branch_bayesfactors, UpperBoundedGeometric, get_wgdtrace

@@ -7,12 +7,13 @@ using DataFrames, CSV, Distributions, Parameters, JLD
 @everywhere using Beluga
 
 # configuration ________________________________________________________________
-# this could end up in an argparse kind of thing
+# this could end up in an argparse kind of thing, or a Parameters struct
 config = (
     treefile = "test/data/sim100/plants2.nw",
     # datafile = "test/data/sim100/set6_c10_counts.csv",
     datafile = "test/data/dicots/dicots-f01-100.csv",
     outdir   = "/tmp/irmcmc",
+    rj       = false,
     niter    = 11000,
     burnin   = 1000,
     saveiter = 2500,
@@ -24,7 +25,17 @@ config = (
     pk       = DiscreteUniform(0, 20),
     qkernel  = Beta(1,3),
     λkernel  = Exponential(0.001),
-    expected = LogNormal(log(1), 0.1)
+    expected = LogNormal(log(1), 0.1),
+    wgds     = [
+            (lca="ath", t=rand(), q=rand()),
+            (lca="ath", t=rand(), q=rand()),
+            (lca="ptr", t=rand(), q=rand()),
+            (lca="mtr", t=rand(), q=rand()),
+            (lca="cqu", t=rand(), q=rand()),
+            (lca="ugi", t=rand(), q=rand()),
+            (lca="ugi", t=rand(), q=rand()),
+            (lca="ugi", t=rand(), q=rand()),
+            (lca="sly", t=rand(), q=rand())]
 )
 
 # script _______________________________________________________________________
@@ -32,6 +43,7 @@ config = (
 @unpack niter, burnin, saveiter, ppsiter = config
 @unpack theta0, sigma0, cov0, cov, sigma = config
 @unpack etaa, etab, qa, qb, pk, qkernel, λkernel, expected = config
+@unpack wgds, rj = config
 isdir(outdir) ? nothing : mkdir(outdir)
 @info "config" config
 open(joinpath(outdir, "config.txt"), "w") do f; write(f, string(config)); end
@@ -39,6 +51,7 @@ open(joinpath(outdir, "config.txt"), "w") do f; write(f, string(config)); end
 nw = open(treefile, "r") do f ; readline(f); end
 df = CSV.read(datafile, delim=",")
 d, p = DLWGD(nw, df, theta0, theta0, 0.9, Branch)
+addwgds!(d, p, wgds)
 
 # prior
 prior = IidRevJumpPrior(
@@ -56,7 +69,8 @@ Beluga.init!(chain, qkernel=qkernel, λkernel=λkernel)
 function main(chain, outdir, niter, burnin, saveiter, ppsiter)
     gen = 0
     while gen < niter
-        rjmcmc!(chain, saveiter, show=10, trace=1, rjstart=0)
+        rj ? rjmcmc!(chain, saveiter, show=10, trace=1, rjstart=0) :
+               mcmc!(chain, saveiter, show=10, trace=1)
         gen += saveiter
         posterior_Σ!(chain)
         posterior_E!(chain)
