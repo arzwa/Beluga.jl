@@ -120,8 +120,8 @@ end
     mcols = [col for col in names(trace) if startswith(string(col), "μ")]
     n = length(lcols) + 3
     legend := false
-    xticks := false
-    yticks := false
+    xticks --> false
+    yticks --> false
     grid   := false
     nrow = n % ncol == 0 ? n ÷ ncol : (n ÷ ncol) + 1
     layout := (nrow, ncol)
@@ -152,7 +152,7 @@ end
             title       := lab
             title_loc   := :left
             titlefont  --> font(8)
-            foreground := :white
+            foreground --> :auto
             trace[!,col]
         end
     end

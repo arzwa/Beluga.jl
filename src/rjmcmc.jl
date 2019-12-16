@@ -301,7 +301,8 @@ function move_wgdtime!(chain, n)
         n[:t] = t1 + t2 - t  # update from child below
         update!(child, :t, t)
     end
-    l_ = logpdf!(n, data)
+    l_ = logpdf!(child, data)  # this was n instead of child, does that work
+                               # here? apparently not!
     p_ = logpdf(prior, model)
     hr = l_ + p_ - state[:logp] - state[:logπ] + r
     if log(rand()) < hr
@@ -335,7 +336,8 @@ function move_wgdrates!(chain, prior::CoevolRevJumpPrior, n)
     flank[:λ] = exp(w[2])
     flank[:μ] = exp(w[3])
     update!(child)
-    l_ = logpdf!(n, data)
+    l_ = logpdf!(child, data)  # this was n instead of child, but that doesn't
+                               # work right? 16/12/2019
     p_ = logpdf(prior, model)
     hr = l_ + p_ - state[:logp] - state[:logπ] + r
     if log(rand()) < hr
@@ -364,7 +366,8 @@ function move_wgdrates!(chain, prior::IidRevJumpPrior, n)
     w::Vector{Float64}, r::Float64 = prop(v)
     n[:q] = w[1]
     update!(child, (λ=exp(w[2]), μ=exp(w[3])))
-    l_ = logpdf!(n, data)
+    l_ = logpdf!(child, data)  # this was n instead of child, but that doesn't
+                               # work right? 16/12/2019
     p_ = logpdf(prior, model)
     hr = l_ + p_ - state[:logp] - state[:logπ] + r
     if log(rand()) < hr
@@ -384,9 +387,6 @@ end
 
 # Reversible jump moves
 # =====================
-# NOTE: try centering move? I guess this can just be approximated by using the
-# simplemove with a very small mean?
-
 # simple move, independence samplers q and t
 function move_addwgd!(chain)
     @unpack data, state, model, props, prior = chain
@@ -398,23 +398,26 @@ function move_addwgd!(chain)
     child = nonwgdchild(n)
     propq = chain.props[0][2]
     propλ = chain.props[0][3]
+    
     λ, μ  = child[:λ, :μ]
     q::Float64, r1::Float64  = propq(0.)
     u::Float64 = rand(propλ)
-    if rand() < 0.5
-        θ = log(λ) - u
-        child[:λ] = exp(θ)
-        # @info "λ" λ exp(θ)
-    else
-        θ = log(μ) + u
-        child[:μ] = exp(θ)
-        # @info "μ" μ exp(θ)
-    end
+    θ = log(λ) - u
+    child[:λ] = exp(θ)
+    # if rand() < 0.5
+    #     θ = log(λ) - u
+    #     child[:λ] = exp(θ)
+    #     @info "λ" λ exp(θ)
+    # else
+    #     θ = log(μ) + u
+    #     child[:μ] = exp(θ)
+    #     @info "μ" μ exp(θ)
+    # end
     # θ = log(λn) - propλ.kernel.θ*q
     # θ = log(λn) - u*q
     # @show exp(θ), λn
-    pprop = logpdf(propq.kernel, q) - log(Tl) #+ logpdf(propλ.kernel, u)
     # @show q, pprop, logpdf(propq.kernel, q), log(tlen)
+    pprop = logpdf(propq.kernel, q) - log(Tl) #+ logpdf(propλ.kernel, u)
 
     # @printf " ⋅ %3.3f → %3.3f\n" λn child[:λ]
     wgdnode = insertwgd!(chain.model, n, t, q)
@@ -430,14 +433,14 @@ function move_addwgd!(chain)
         state[s] = haskey(state, s) ? state[s] + 1 : 1
         update!(state, wgdnode, :q)
         update!(state, child, :λ)
-        update!(state, child, :μ)
+        # update!(state, child, :μ)
         set!(data)
         props[wgdnode.i] = [AdaptiveUnitProposal() ; WgdProposals()]
         propλ.accepted += 1
         propq.accepted += 1
     else
         child[:λ] = λ
-        child[:μ] = μ
+        # child[:μ] = μ
         removewgd!(chain.model, wgdnode)
         rev!(data)
     end
@@ -456,20 +459,23 @@ function move_rmwgd!(chain)
     wgdnode = randwgd(chain.model)
     wgdafter = first(wgdnode)
     n  = nonwgdchild(wgdnode)
+
     λ, μ  = n[:λ, :μ]
     q::Float64, r1::Float64  = propq(0.)
     u::Float64 = rand(propλ)
-    if rand() < 0.5
-        θ = log(λ) + u
-        n[:λ] = exp(θ)
-    else
-        θ = log(μ) - u
-        n[:μ] = exp(θ)
-    end
+    θ = log(λ) + u
+    n[:λ] = exp(θ)
+    # if rand() < 0.5
+    #     θ = log(λ) + u
+    #     n[:λ] = exp(θ)
+    # else
+    #     θ = log(μ) - u
+    #     n[:μ] = exp(θ)
+    # end
     # θ = log(λn) + propλ.kernel.θ*wgdnode[:q]
     # θ = log(λn) + u*wgdnode[:q]
-    pprop = logpdf(propq.kernel, wgdnode[:q]) - log(Tl) #+ logpdf(propλ.kernel, u)
     # pprop = 0.
+    pprop = logpdf(propq.kernel, wgdnode[:q]) - log(Tl) #+ logpdf(propλ.kernel, u)
 
     child = removewgd!(chain.model, wgdnode, false)
     l_ = logpdf!(n, data)
@@ -485,13 +491,13 @@ function move_rmwgd!(chain)
         set!(data)
         setstate!(state, chain.model)
         update!(state, n, :λ)
-        update!(state, n, :μ)
+        # update!(state, n, :μ)
         state[:logp] = l_
         state[:logπ] = p_
         propλ.accepted += 1
     else
         n[:λ] = λ
-        n[:μ] = μ
+        # n[:μ] = μ
         insertwgd!(chain.model, child, wgdnode, wgdafter)
         rev!(data)
     end

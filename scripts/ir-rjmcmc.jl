@@ -13,18 +13,18 @@ config = (
     # datafile = "test/data/sim100/set6_c10_counts.csv",
     datafile = "test/data/dicots/dicots-f01-100.csv",
     outdir   = "/tmp/irmcmc",
-    rj       = false,
+    rj       = true,
     niter    = 11000,
     burnin   = 1000,
     saveiter = 2500,
     ppsiter  = 2500,
     theta0   = 1.5, sigma0 = 0.5, cov0 = 0.45,
     sigma    = 1.0, cov    = 0.0,
-    qa       = 1.0, qb     = 3.0,
+    qa       = 1.0, qb     = 5.0,
     etaa     = 3.0, etab   = 1.0,
     pk       = DiscreteUniform(0, 20),
-    qkernel  = Beta(1,3),
-    λkernel  = Exponential(0.001),
+    qkernel  = Beta(1,5),
+    λkernel  = Exponential(0.5),
     expected = LogNormal(log(1), 0.1),
     wgds     = [
             (lca="ath", t=rand(), q=rand()),
@@ -63,7 +63,7 @@ prior = IidRevJumpPrior(
     Tl=treelength(d),
     πE=expected)
 
-chain = RevJumpChain(data=p, model=deepcopy(d), prior=prior)
+chain = RevJumpChain(data=p, model=d, prior=prior)
 Beluga.init!(chain, qkernel=qkernel, λkernel=λkernel)
 
 function main(chain, outdir, niter, burnin, saveiter, ppsiter)
