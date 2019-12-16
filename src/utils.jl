@@ -63,3 +63,24 @@ function clade(d::DLWGD, n::TreeNode)
     end
     leaves
 end
+
+clades(m::DLWGD) = Dict(join(sort(clade(m,v)), ",")=>n for (n,v) in m.nodes)
+
+lca_node(d::DLWGD, s1::Symbol) = lca_node(d, s1, s1)
+
+function lca_node(d::DLWGD, s1::Symbol, s2::Symbol)
+    n = first([d.nodes[x] for (x,n) in d.leaves if n == s1])
+    while !(s2 in clade(d, n))
+        n = n.p
+    end
+    n
+end
+
+# add WGDs from array of named tuples e.g. (lca="ath,cpa", t=rand(), q=rand())
+function addwdgs!(m::DLWGD, p::PArray, config::Array)
+    for x in config
+        n = lca_node(m, Symbol.(split(x.lca, ","))...)
+        insertwgd!(m, n, n[:t]*x.t, x.q)
+        extend!(p, n.i)
+    end
+end
