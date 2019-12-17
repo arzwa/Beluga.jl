@@ -6,8 +6,8 @@ using Beluga, Parameters
 # branch model
 begin
     ddir = "test/data"
-    nw = open("test/data/plants2.nw", "r") do f ; readline(f); end
-    df = CSV.read("test/data/dicots-f01-100.csv", delim=",")
+    nw = open("test/data/dicots/plants2.nw", "r") do f ; readline(f); end
+    df = CSV.read("test/data/dicots/dicots-f01-100.csv", delim=",")
     d, p = DLWGD(nw, df, 1., 1., 0.9)
     prior = IidRevJumpPrior(
         Σ₀=[1 0. ; 0. 1],
@@ -20,7 +20,7 @@ begin
         # πE=LogNormal(1, 0.2))
     chain = RevJumpChain(
         data=deepcopy(p), model=deepcopy(d), prior=deepcopy(prior))
-    init!(chain, qkernel=Beta(1,1), λkernel=Exponential(0.1))
+    init!(chain)
 end
 
 rjmcmc!(chain, 1000, trace=1, show=10)

@@ -8,7 +8,7 @@ datadir = "data"
 df1 = DataFrame(:A=>[2,3],:B=>[2,5],:C=>[3,0],:D=>[4,1])
 df2 = DataFrame(:A=>rand(1:20, 1000), :B=>rand(1:20, 1000),
     :C=>rand(1:10, 1000), :D=>rand(1:10, 1000))
-df3 = CSV.read(joinpath(datadir, "plants1-100.tsv"), delim=",")
+df3 = CSV.read(joinpath(datadir, "plants1-100.csv"))
 s1 = s2 = "(D:18.03,(C:12.06,(B:7.06,A:7.06):4.99):5.97);"
 s3 = open(joinpath(datadir, "plants1.nw"), "r") do f ; readline(f); end
 s4 = open(joinpath(datadir, "plants1c.nw"), "r") do f ; readline(f); end

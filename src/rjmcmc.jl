@@ -39,6 +39,7 @@ function reverse(kernel::DropKernel, λ::Float64, q::Float64)
     exp(θ), logpdf(kernel.qkernel, q)
 end
 
+
 # reversible jump chain
 @with_kw mutable struct RevJumpChain{T<:Real,V<:ModelNode{T},
         M<:RevJumpPrior,K<:RevJumpKernel}

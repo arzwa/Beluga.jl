@@ -1,5 +1,4 @@
-# Model
-# =====
+# Model ________________________________________________________________________
 abstract type PhyloBDPModel{T} end
 
 struct DLWGD{T<:Real,V<:ModelNode{T}} <: PhyloBDPModel{T}
@@ -277,8 +276,7 @@ function (model::DLWGD{T,V})(θ::Vector{Y}) where {T<:Real,V<:ModelNode{T},Y<:Re
 end
 
 
-# Log-likelihood computation
-# ==========================
+# Log-likelihood computation ___________________________________________________
 function logpdf(d::DLWGD, x::Vector{Int64})
     L = csuros_miklos(d[1], x)
     l = integrate_root(L[:,1], d[1])
@@ -323,13 +321,13 @@ function csuros_miklos(node::ModelNode{T}, x::Vector{Int64}) where T<:Real
 end
 
 function csuros_miklos!(L::Matrix{T},
-        node::ModelNode{T}, x::Vector{Int64}) where T<:Real
+        node::ModelNode{T}, x::Vector{Int64}, leaf=false) where T<:Real
     # NOTE: possible optimizations:
     #  - column-major based access B, W, (L ✓)
     #  - matrix operations instead of some loops ~ WGDgc
     @unpack W, ϵ = node.x
     mx = maximum(x)
-    if isleaf(node)
+    if isleaf(node) || leaf
         L[x[node.i]+1, node.i] = 0.
     else
         children = [c for c in node.c]
@@ -393,6 +391,21 @@ function integrate_root(L::Vector{T}, n::ModelNode{T}) where T<:Real
         f = (i-1)*log1mexp(ϵ) + log(η) + (i-2)*log(1. - η)
         f -= i*log1mexp(log(1. - η)+ϵ)
         p = logaddexp(p, L[i] + f)
+    end
+    return p
+end
+
+# this is a bit superfluous (or the above function is), but is convenient
+# currently to have separately. Note that we always keep the L matrix unaffected
+# by the root prior or conditioning choice.
+function root_vector(L::Vector{T}, n::ModelNode{T}) where T<:Real
+    η = n[:η]
+    ϵ = log(gete(n, 2))
+    p = zeros(length(L))
+    for i in 2:length(L)
+        f = (i-1)*log1mexp(ϵ) + log(η) + (i-2)*log(1. - η)
+        f -= i*log1mexp(log(1. - η)+ϵ)
+        p[i] = L[i] + f
     end
     return p
 end
