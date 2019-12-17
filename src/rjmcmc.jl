@@ -6,19 +6,40 @@
 const Proposals = Dict{Int64,Vector{AdaptiveUvProposal{T,V} where {T,V}}}
 const State = Dict{Symbol,Union{Float64,Int64}}
 
+
+# reversible jump kernels
 abstract type RevJumpKernel end
 
 @with_kw mutable struct SimpleKernel <: RevJumpKernel
-    qkernel ::UnivariateDistribution = Beta(1,1)
+    qkernel ::Beta{Float64} = Beta(1,1)
     accepted::Int64 = 0
 end
+
+function forward(kernel::SimpleKernel)
+    q = rand(kernel.qkernel)
+    q, logpdf(kernel.qkernel, q)
+end
+
+reverse(kernel::SimpleKernel, q::Float64) = logpdf(kernel.qkernel, q)
 
 @with_kw mutable struct DropKernel <: RevJumpKernel
-    qkernel ::UnivariateDistribution = Beta(1,1)
-    λkernel ::UnivariateDistribution = Exponential()
+    qkernel ::Beta{Float64} = Beta(1,1)
+    λkernel ::Exponential{Float64} = Exponential(0.1)
     accepted::Int64 = 0
 end
 
+function forward(kernel::DropKernel, λ::Float64)
+    q  = rand(kernel.qkernel)
+    θ  = log(λ) - rand(kernel.λkernel)
+    q, exp(θ), logpdf(kernel.qkernel, q)
+end
+
+function reverse(kernel::DropKernel, λ::Float64, q::Float64)
+    θ = log(λ) + rand(kernel.λkernel)
+    exp(θ), logpdf(kernel.qkernel, q)
+end
+
+# reversible jump chain
 @with_kw mutable struct RevJumpChain{T<:Real,V<:ModelNode{T},
         M<:RevJumpPrior,K<:RevJumpKernel}
     data  ::PArray{T}
@@ -156,6 +177,7 @@ function wgdiid(k::AdaptiveUvProposal, x::Vector{Float64})
     return xp, 0.
 end
 
+# not sure about this one
 function wgdqλ(k::AdaptiveUvProposal, x::Vector{Float64})
     xp = copy(x)
     r = rand(k)
@@ -360,17 +382,15 @@ move_rmwgd!( chain::RevJumpChain) = move_rmwgd!( chain, chain.kernel)
 function move_addwgd!(chain, kernel::SimpleKernel)
     @unpack data, state, props, prior = chain
     @unpack Tl = prior
-    @unpack qkernel = kernel
     if logpdf(prior.πK, nwgd(chain.model)+1) == -Inf; return; end
     n, t  = randpos(chain.model)
     child = nonwgdchild(n)
-    q::Float64 = rand(qkernel)
-    pprop = logpdf(qkernel, q) - log(Tl)
+    q, lp = forward(kernel)
     wgdnode = insertwgd!(chain.model, n, t, q)
     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
     l_ = logpdf!(child, data)
     p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] - pprop
+    hr = l_ + p_ - state[:logp] - state[:logπ] - lp + log(Tl)
     if log(rand()) < hr
         state[:logp] = l_
         state[:logπ] = p_
@@ -388,19 +408,19 @@ function move_addwgd!(chain, kernel::SimpleKernel)
     return
 end
 
+# deterministic down move for simple kernel
 function move_rmwgd!(chain, kernel::SimpleKernel)
     @unpack data, state, props, prior = chain
     @unpack Tl = prior
-    @unpack qkernel = kernel
     if nwgd(chain.model) == 0; return; end
     wgdnode = randwgd(chain.model)
     wgdafter = first(wgdnode)
     n  = nonwgdchild(wgdnode)
-    pprop = logpdf(qkernel, wgdnode[:q]) - log(Tl)
+    lp = reverse(kernel, wgdnode[:q])
     child = removewgd!(chain.model, wgdnode, false, true)
     l_ = logpdf!(n, data)
     p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] + pprop
+    hr = l_ + p_ - state[:logp] - state[:logπ] + lp - log(Tl)
     if log(rand()) < hr
         # upon acceptance; shrink and reindex
         length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)
@@ -414,6 +434,75 @@ function move_rmwgd!(chain, kernel::SimpleKernel)
         state[:logπ] = p_
         kernel.accepted += 1
     else
+        insertwgd!(chain.model, child, wgdnode, wgdafter)
+        rev!(data)
+    end
+end
+
+# drop kernel, reverse move is non-deterministic
+# from what I've observed so far, a WGD tends to correspond wit an increased λ
+# and typicaly not a decreased μ, so the drop move makes sense
+function move_addwgd!(chain, kernel::DropKernel)
+    @unpack data, state, props, prior = chain
+    @unpack Tl = prior
+    if logpdf(prior.πK, nwgd(chain.model)+1) == -Inf; return; end
+    n, t  = randpos(chain.model)
+    child = nonwgdchild(n)
+    λ = child[:λ]
+    q, λ_, lp = forward(kernel, λ)
+    child[:λ] = λ_
+    wgdnode = insertwgd!(chain.model, n, t, q)
+    length(data[1].x) == 0 ? nothing : extend!(data, n.i)
+    l_ = logpdf!(child, data)
+    p_ = logpdf(prior, chain.model)
+    hr = l_ + p_ - state[:logp] - state[:logπ] - lp + log(Tl)  # × (1/T)^-1
+    if log(rand()) < hr
+        state[:logp] = l_
+        state[:logπ] = p_
+        state[:k] += 1
+        s = Symbol("k$(nonwgdchild(wgdnode).i)")
+        state[s] = haskey(state, s) ? state[s] + 1 : 1
+        update!(state, wgdnode, :q)
+        update!(state, child, :λ)
+        set!(data)
+        props[wgdnode.i] = [AdaptiveUnitProposal() ; WgdProposals()]
+        kernel.accepted += 1
+    else
+        child[:λ] = λ
+        removewgd!(chain.model, wgdnode)
+        rev!(data)
+    end
+    return
+end
+
+function move_rmwgd!(chain, kernel::DropKernel)
+    @unpack data, state, props, prior = chain
+    @unpack Tl = prior
+    if nwgd(chain.model) == 0; return; end
+    wgdnode = randwgd(chain.model)
+    wgdafter = first(wgdnode)
+    n = nonwgdchild(wgdnode)
+    λ = n[:λ]
+    λ_, lp = reverse(kernel, λ, wgdnode[:q])
+    n[:λ] = λ_
+    child = removewgd!(chain.model, wgdnode, false, true)
+    l_ = logpdf!(n, data)
+    p_ = logpdf(prior, chain.model)
+    hr = l_ + p_ - state[:logp] - state[:logπ] + lp - log(Tl)
+    if log(rand()) < hr
+        # upon acceptance; shrink and reindex
+        length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)
+        delete!(props, wgdnode.i)
+        delete!(state, id(wgdnode, :q))
+        reindex!(chain.model, wgdnode.i+2)
+        reindex!(chain.props, wgdnode.i+2)
+        set!(data)
+        setstate!(state, chain.model)
+        state[:logp] = l_
+        state[:logπ] = p_
+        kernel.accepted += 1
+    else
+        n[:λ] = λ
         insertwgd!(chain.model, child, wgdnode, wgdafter)
         rev!(data)
     end

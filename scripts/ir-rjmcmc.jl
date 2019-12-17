@@ -20,11 +20,12 @@ config = (
     ppsiter  = 2500,
     theta0   = 1.5, sigma0 = 0.5, cov0 = 0.45,
     sigma    = 1.0, cov    = 0.0,
-    qa       = 1.0, qb     = 1.0,
+    qa       = 1.0, qb     = 3.0,
     etaa     = 3.0, etab   = 1.0,
     pk       = DiscreteUniform(0, 20),
-    qkernel  = Beta(1,1),
-    expected = LogNormal(log(1), 0.1),
+    kernel   = Beluga.DropKernel(qkernel=Beta(1,3)),
+    # expected = LogNormal(log(1), 0.1),
+    expected = nothing,
     wgds     = [
             (lca="ath", t=rand(), q=rand()),
             (lca="ath", t=rand(), q=rand()),
@@ -41,7 +42,7 @@ config = (
 @unpack treefile, datafile, outdir = config
 @unpack niter, burnin, saveiter, ppsiter = config
 @unpack theta0, sigma0, cov0, cov, sigma = config
-@unpack etaa, etab, qa, qb, pk, qkernel, expected = config
+@unpack etaa, etab, qa, qb, pk, kernel, expected = config
 @unpack wgds, rj = config
 isdir(outdir) ? nothing : mkdir(outdir)
 @info "config" config
@@ -62,7 +63,6 @@ prior = IidRevJumpPrior(
     Tl=treelength(d),
     πE=expected)
 
-kernel = Beluga.SimpleKernel(qkernel=qkernel)
 chain = RevJumpChain(data=p, model=d, prior=prior)
 Beluga.init!(chain)
 
