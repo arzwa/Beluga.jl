@@ -62,7 +62,7 @@ prior = IidRevJumpPrior(
     Tl=treelength(d),
     πE=expected)
 
-chain = RevJumpChain(data=p, model=d, prior=prior)
+chain = RevJumpChain(data=p, model=d, prior=prior, kernel=kernel)
 Beluga.init!(chain)
 
 function main(chain, outdir, niter, burnin, saveiter, ppsiter)
