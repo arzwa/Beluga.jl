@@ -9,6 +9,11 @@ minfs(::Type{T}, dims::Union{Integer, AbstractUnitRange}...) where T<:Real =
 # =============
 getϕ(t, λ, μ) = λ ≈ μ ? λ*t/(1. + λ*t) : μ*(exp(t*(λ-μ))-1.)/(λ*exp(t*(λ-μ))-μ)
 getψ(t, λ, μ) = λ ≈ μ ? λ*t/(1. + λ*t) : (λ/μ)*getϕ(t, λ, μ)
+getξ(i, j, k, t, λ, μ) = binomial(i, k)*binomial(i+j-k-1,i-1)*
+    getϕ(t, λ, μ)^(i-k)*getψ(t, λ, μ)^(j-k)*(1-getϕ(t, λ, μ)-getψ(t, λ, μ))^k
+tp(a, b, t, λ, μ) = (a == b == 0) ? 1.0 :
+    sum([getξ(a, b, k, t, λ, μ) for k=0:min(a,b)])
+
 
 # NOTE: when μ >> λ, numerical issues sometimes result in p > 1.
 ep(λ, μ, t, ε) = λ ≈ μ ? 1. + (1. - ε)/(μ * (ε - 1.) * t - 1.) :

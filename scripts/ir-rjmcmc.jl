@@ -10,8 +10,8 @@ using DataFrames, CSV, Distributions, Parameters, JLD
 # this could end up in an argparse kind of thing, or a Parameters struct
 config = (
     treefile = "test/data/sim100/plants2.nw",
-    datafile = "test/data/sim100/set6_c10_counts.csv",
-    # datafile = "test/data/dicots/dicots-f01-100.csv",
+    # datafile = "test/data/sim100/set6_c10_counts.csv",
+    datafile = "test/data/dicots/dicots-f01-100.csv",
     outdir   = "/tmp/irmcmc",
     rj       = true,
     niter    = 11000,

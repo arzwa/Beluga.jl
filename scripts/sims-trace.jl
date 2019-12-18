@@ -8,48 +8,45 @@ using DataFrames, CSV, Distributions, Parameters, JLD
 # Configuration ________________________________________________________________
 config = (
     treefile = "test/data/sim100/plants2.nw",
-    trace    = "test/data/sim100/set6_c10_counts.csv",
-    outdir   = ARGS[1],
-    clade1   = [:bvu, :sly, :ugi, :cqu]
+    trace    = "/home/arzwa/rjumpwgd/data/dicots/ormcmc_2222860/trace.csv",
+    outdir   = length(ARGS) > 0 ? ARGS[1] : "/tmp/sims",
+    clade1   = [:bvu, :sly, :ugi, :cqu],
+    N        = 100,
     rj       = true,
-    niter    = 11000,
-    burnin   = 1000,
-    saveiter = 2500,
-    ppsiter  = 2500,
+    pp       = true,
+    niter    = 2500,
+    burnin   = 500,
     theta0   = 1.5, sigma0 = 0.5, cov0 = 0.45,
     sigma    = 1.0, cov    = 0.0,
     qa       = 1.0, qb     = 3.0,
     etaa     = 3.0, etab   = 1.0,
     pk       = DiscreteUniform(0, 20),
+    ksim     = Binomial(10, 0.5),
+    qsim     = Beta(2,3),
     kernel   = Beluga.DropKernel(qkernel=Beta(1,3)),
-    expected = Normal(1, 0.1),
+    expected = nothing
 )
 
-# script _______________________________________________________________________
-@unpack treefile, trace, outdir = config
-@unpack niter, burnin, saveiter, ppsiter = config
-@unpack theta0, sigma0, cov0, cov, sigma = config
-@unpack etaa, etab, qa, qb, pk, kernel, expected = config
-isdir(outdir) ? nothing : mkdir(outdir)
-@info "config" config
-open(joinpath(outdir, "config.txt"), "w") do f; write(f, string(config)); end
-
-trace = CSV.read(trace)
-nw = open(treefile, "r") do f ; readline(f); end
-df = CSV.read(datafile, delim=",")
-
-# prior
-prior = IidRevJumpPrior(
-    Σ₀=[sigma cov ; cov sigma],
-    X₀=MvNormal(log.([theta0, theta0]), [sigma0 cov0 ; cov0 sigma0]),
-    πK=pk,
-    πq=Beta(qa,qb),
-    πη=Beta(etaa,etab),
-    Tl=treelength(d),
-    πE=expected)
-
-
 # methods ______________________________________________________________________
+function setwgds!(trace)
+    wgds = Meta.parse.(trace[!,:wgds])
+    trace[!,:wgds] = eval.(wgds)
+end
+
+function addrandwgds!(model, πk, πq)
+    Beluga.removewgds!(model)
+    k = rand(πk)
+    wgds = Dict()
+    for i=1:k
+        n, t = Beluga.randpos(model)
+        q = rand(πq)
+        wgdnode = insertwgd!(model, n, t, q)
+        child = Beluga.nonwgdchild(wgdnode)
+        wgds[wgdnode.i] = (child.i, q)
+    end
+    wgds
+end
+
 function simulate(model, N, clade1)
     clade2 = [v for (k,v) in  model.leaves if !(v in clade1)]
     rand(model, N, [clade1,clade2])
@@ -67,14 +64,14 @@ function rj_inference(nw, df, prior, kernel, n=6000, nt=Branch)
     chain
 end
 
-function output(chain, x, burnin=1000)
-    @unpack model, rates, wgds, Σ, η = x
+function output(chain, model, wgds, burnin=1000)
     trace = chain.trace[burnin:end,:]
+    rates = Beluga.getrates(model)
+    η = model[1][:η]
     qs = Dict(Symbol("q$i")=>model[i][:q] for (i,wgd) in sort(wgds))
     λs = Dict(Symbol("λ$i")=>rates[1,i] for i in 1:size(rates)[2])
     μs = Dict(Symbol("μ$i")=>rates[2,i] for i in 1:size(rates)[2])
-    ss = Dict(:var=>Σ[1,1], :cov=>Σ[1,2], :η1=>η)
-    d = merge(qs, λs, μs, ss)
+    d = merge(qs, λs, μs)
     df = DataFrame(:variable=>collect(keys(sort(d))),
         :trueval=>collect(values(sort(d))))
     df = join(df, describe(trace,
@@ -99,35 +96,58 @@ function write_wgds(fname, wgds)
     end
 end
 
-
 # run simulation
-function main()
-    isdir(outdir) ? outdir : mkdir(outdir)
-    m, p = DLWGD(nw, 2., 2., 0.9, Branch)
-    x = rand(simprior, m)
-    d = simulate(x.model, N, clade1)
-    c = rj ? rj_inference(nw, d, infprior, n) :
-             fixed_inference(nw, d, x.wgds, infprior, n)
-    out = output(c, x, burnin)
+function main(config)
+    @unpack treefile, trace, outdir, clade1  = config
+    @unpack niter, burnin, N, rj, pp = config
+    @unpack theta0, sigma0, cov0, cov, sigma, ksim, qsim = config
+    @unpack etaa, etab, qa, qb, pk, kernel, expected = config
+
+    isdir(outdir) ? nothing : mkdir(outdir)
+    @info "config" config
+    open(joinpath(outdir, "config.txt"), "w") do f; write(f, string(config)); end
+
+    trace = CSV.read(trace)
+    setwgds!(trace)
+    nw = open(treefile, "r") do f ; readline(f); end
+    m, p  = DLWGD(nw, 2., 2., 0.9, Branch)
+
+    # prior
+    prior = IidRevJumpPrior(
+        Σ₀=[sigma cov ; cov sigma],
+        X₀=MvNormal(log.([theta0, theta0]), [sigma0 cov0 ; cov0 sigma0]),
+        πK=pk,
+        πq=Beta(qa,qb),
+        πη=Beta(etaa,etab),
+        Tl=treelength(m),
+        πE=expected)
+
+    model = m(rand(trace))
+    @info "rates" Beluga.getrates(model)
+    wgds  = addrandwgds!(model, ksim, qsim)
+    @info "WGDs" wgds Beluga.getwgds(model)
+    data  = simulate(model, N, clade1)
+    @info "Simulated data" data
+
+    c = rj ? rj_inference(nw, data, prior, kernel, niter) :
+             fixed_inference(nw, data, wgds, infprior, n)
+    wgdtrace = get_wgdtrace(c)
+
+    out = output(c, model, wgds, burnin)
     bfs = branch_bayesfactors(c, burnin)
-    write_wgds(joinpath(outdir,
-        "$(savename(params)).$(simid).wgds.csv"), x.wgds)
-    CSV.write(joinpath(outdir,
-        "$(savename(params)).$(simid).sim.csv"), out)
-    CSV.write(joinpath(outdir,
-        "$(savename(params)).$(simid).counts.csv"), d)
-    CSV.write(joinpath(outdir,
-        "$(savename(params)).$(simid).bfs.csv"), bfs)
-    CSV.write(joinpath(outdir,
-        "$(savename(params)).$(simid).trace.csv"), c.trace)
-    JLD.save( joinpath(outdir,
-        "$(savename(params)).$(simid).wgdtrace.jld"), "wgds", get_wgdtrace(c))
+    write_wgds(joinpath(outdir, "wgds.csv"), wgds)
+    CSV.write(joinpath(outdir, "sim.csv"), out)
+    CSV.write(joinpath(outdir, "counts.csv"), data)
+    CSV.write(joinpath(outdir, "bfs.csv"), bfs)
+    CSV.write(joinpath(outdir, "trace.csv"), c.trace)
+    JLD.save( joinpath(outdir, "wgdtrace.jld"), "wgds", wgdtrace)
     if pp
-        pps = PostPredSim(c, d, 1000, burnin=burnin)
-        JLD.save(joinpath(outdir,
-            "$(savename(params)).$(simid).pps.jld"), "pps", pps)
+        @info "Doing posterior predicive simulations (PPS)"
+        pps = PostPredSim(c, data, 1000, burnin=burnin)
+        JLD.save(joinpath(outdir, "pps.jld"), "pps", pps)
+        @info "PPS results" pp_pvalues(pps);
     end
-    return c, out
+    return c, out, wgds
 end
 
-chain, out = main()
+chain, out = main(config)

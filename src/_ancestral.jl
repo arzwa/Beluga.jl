@@ -63,8 +63,8 @@ function normlogp(x)
     p = p ./ sum(sort(p))
 end
 
-# must be fast! should be optimized for multiple sims
-function Base.rand(d::DLWGD{T}, L::Matrix, x::Vector) where T<:Real
+# must be fast! should be optimized for multiple sims (for one family)
+function Base.rand(d::DLWGD{T}, profile; hardmax=50) where T<:Real
     mmax  = size(d[1].x.W)[1]
     Lroot = Beluga.root_vector(L[:,1], d[1])
     proot = normlogp(Lroot[2:end])
@@ -73,5 +73,34 @@ function Base.rand(d::DLWGD{T}, L::Matrix, x::Vector) where T<:Real
     function walk(n)
         # sample from P(Xi|D,Xj) = [1/P(D'|Xj)]P(Xi|Xj) Σ_y P(D'|Yi=y) P(Yi=yi|Xi)
         # i.e. compute that vector for many Xi and sample from it, in preorder
+        for c in n.c
+            # sample
+            # P(Xi|Xj) Σ_y P(D'|Yi=y) P(Yi=yi|Xi)
+            Xj = X[n.i]
+
+
+            walk(c)
+        end
     end
+end
+
+function pvec(n, xp, profile; hardmax=50, tol=1e-6)
+    λ, μ = Beluga.getλμ(n, n.p)
+    t = n[:t]
+    e = Beluga.gete(n, 2)
+    L = profile.Lp
+    ymax = profile.x[n.i]
+    pvec = Float64[]
+    diff = 0
+    x = 0
+    imax = 0
+    while diff < -log(tol) && x <= hardmax
+        p = Beluga.tp(xp, x, t, λ, μ)
+        inner = [exp(L[y+1,n.i])*binomial(x,y)*e^(x-y)*(1. -e)^y for y=0:min(x,ymax)]
+        push!(pvec, log(p) + log(sum(inner)))
+        imax > 0 ? diff = maximum(pvec[imax:end]) - minimum(pvec[imax:end]) : nothing
+        imax = x > 0 && pvec[end-1] < pvec[end] ? x+1 : imax
+        x += 1
+    end
+    normlogp(pvec)
 end
