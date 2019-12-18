@@ -28,11 +28,6 @@ config = (
 )
 
 # methods ______________________________________________________________________
-function setwgds!(trace)
-    wgds = Meta.parse.(trace[!,:wgds])
-    trace[!,:wgds] = eval.(wgds)
-end
-
 function addrandwgds!(model, πk, πq)
     Beluga.removewgds!(model)
     k = rand(πk)
@@ -53,7 +48,7 @@ function simulate(model, N, clade1)
 end
 
 function rj_inference(nw, df, prior, kernel, n=6000, nt=Branch)
-    r = rand(prior.X₀)
+    r = exp.(rand(prior.X₀))
     η = rand(prior.πη)
     model, data = DLWGD(nw, df, r[1], r[2], η, nt)
     chain = RevJumpChain(data=data, model=model, prior=prior, kernel=kernel)
@@ -108,7 +103,6 @@ function main(config)
     open(joinpath(outdir, "config.txt"), "w") do f; write(f, string(config)); end
 
     trace = CSV.read(trace)
-    setwgds!(trace)
     nw = open(treefile, "r") do f ; readline(f); end
     m, p  = DLWGD(nw, 2., 2., 0.9, Branch)
 
