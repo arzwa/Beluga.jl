@@ -28,17 +28,38 @@ reverse(kernel::SimpleKernel, q::Float64) = logpdf(kernel.qkernel, q)
     accepted::Int64 = 0
 end
 
-function forward(kernel::DropKernel, λ::Float64)
+function forward(kernel::DropKernel, λ::Float64, μ::Float64)
     q  = rand(kernel.qkernel)
     θ  = log(λ) - rand(kernel.λkernel)
-    q, exp(θ), logpdf(kernel.qkernel, q)
+    q, exp(θ), μ, logpdf(kernel.qkernel, q)
 end
 
-function reverse(kernel::DropKernel, λ::Float64, q::Float64)
+function reverse(kernel::DropKernel, λ::Float64, μ::Float64, q::Float64)
     θ = log(λ) + rand(kernel.λkernel)
-    exp(θ), logpdf(kernel.qkernel, q)
+    exp(θ), μ, logpdf(kernel.qkernel, q)
 end
 
+@with_kw mutable struct BranchKernel <: RevJumpKernel
+    qkernel ::Beta{Float64} = Beta(1,1)
+    λkernel ::Exponential{Float64} = Exponential(0.1)
+    μkernel ::Exponential{Float64} = Exponential(0.1)
+    accepted::Int64 = 0
+end
+
+function forward(kernel::BranchKernel, λ::Float64, μ::Float64)
+    q  = rand(kernel.qkernel)
+    rand() < 0.5 ?
+        λ = exp(log(λ) - rand(kernel.λkernel)) :
+        μ = exp(log(μ) + rand(kernel.μkernel))
+    q, λ, μ, logpdf(kernel.qkernel, q)
+end
+
+function reverse(kernel::BranchKernel, λ::Float64, μ::Float64, q::Float64)
+    rand() < 0.5 ?
+        λ = exp(log(λ) + rand(kernel.λkernel)) :
+        μ = exp(log(μ) - rand(kernel.μkernel))
+    λ, μ, logpdf(kernel.qkernel, q)
+end
 
 # reversible jump chain
 @with_kw mutable struct RevJumpChain{T<:Real,V<:ModelNode{T},
@@ -443,15 +464,16 @@ end
 # drop kernel, reverse move is non-deterministic
 # from what I've observed so far, a WGD tends to correspond wit an increased λ
 # and typicaly not a decreased μ, so the drop move makes sense
-function move_addwgd!(chain, kernel::DropKernel)
+function move_addwgd!(chain, kernel::Union{DropKernel,BranchKernel})
     @unpack data, state, props, prior = chain
     @unpack Tl = prior
     if logpdf(prior.πK, nwgd(chain.model)+1) == -Inf; return; end
     n, t  = randpos(chain.model)
     child = nonwgdchild(n)
-    λ = child[:λ]
-    q, λ_, lp = forward(kernel, λ)
+    λ, μ = child[:λ, :μ]
+    q, λ_, μ_, lp = forward(kernel, λ, μ)
     child[:λ] = λ_
+    child[:μ] = μ_
     wgdnode = insertwgd!(chain.model, n, t, q)
     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
     l_ = logpdf!(child, data)
@@ -465,27 +487,31 @@ function move_addwgd!(chain, kernel::DropKernel)
         state[s] = haskey(state, s) ? state[s] + 1 : 1
         update!(state, wgdnode, :q)
         update!(state, child, :λ)
+        update!(state, child, :μ)
         set!(data)
         props[wgdnode.i] = [AdaptiveUnitProposal() ; WgdProposals()]
         kernel.accepted += 1
     else
         child[:λ] = λ
+        child[:μ] = μ
         removewgd!(chain.model, wgdnode)
         rev!(data)
     end
     return
 end
 
-function move_rmwgd!(chain, kernel::DropKernel)
+function move_rmwgd!(chain, kernel::Union{DropKernel,BranchKernel})
     @unpack data, state, props, prior = chain
     @unpack Tl = prior
     if nwgd(chain.model) == 0; return; end
     wgdnode = randwgd(chain.model)
     wgdafter = first(wgdnode)
     n = nonwgdchild(wgdnode)
-    λ = n[:λ]
-    λ_, lp = reverse(kernel, λ, wgdnode[:q])
+    λ, μ = n[:λ, :μ]
+    λ_, μ_, lp = reverse(kernel, λ, μ, wgdnode[:q])
+    # @show λ, λ_, μ, μ_
     n[:λ] = λ_
+    n[:μ] = μ_
     child = removewgd!(chain.model, wgdnode, false, true)
     l_ = logpdf!(n, data)
     p_ = logpdf(prior, chain.model)
@@ -504,6 +530,7 @@ function move_rmwgd!(chain, kernel::DropKernel)
         kernel.accepted += 1
     else
         n[:λ] = λ
+        n[:μ] = μ
         insertwgd!(chain.model, child, wgdnode, wgdafter)
         rev!(data)
     end

@@ -23,7 +23,7 @@ config = (
     qa       = 1.0, qb     = 3.0,
     etaa     = 3.0, etab   = 1.0,
     pk       = DiscreteUniform(0, 20),
-    kernel   = Beluga.DropKernel(qkernel=Beta(1,3)),
+    kernel   = Beluga.BranchKernel(qkernel=Beta(1,3)),
     expected = Normal(1, 0.1),
     wgds     = [
             (lca="ath", t=rand(), q=rand()),
