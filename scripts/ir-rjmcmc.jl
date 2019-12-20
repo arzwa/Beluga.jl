@@ -11,7 +11,7 @@ using DataFrames, CSV, Distributions, Parameters, JLD
 config = (
     treefile = "test/data/sim100/plants2.nw",
     # datafile = "test/data/sim100/set6_c10_counts.csv",
-    datafile = "test/data/dicots/dicots-f01-100.csv",
+    datafile = "test/data/dicots/dicots-f01-25.csv",
     outdir   = "/tmp/irmcmc",
     rj       = true,
     niter    = 11000,
@@ -20,10 +20,10 @@ config = (
     ppsiter  = 2500,
     theta0   = 1.5, sigma0 = 0.5, cov0 = 0.45,
     sigma    = 1.0, cov    = 0.0,
-    qa       = 1.0, qb     = 3.0,
+    qa       = 1.0, qb     = 1.0,
     etaa     = 3.0, etab   = 1.0,
     pk       = DiscreteUniform(0, 20),
-    kernel   = Beluga.BranchKernel(qkernel=Beta(1,3)),
+    kernel   = Beluga.BranchKernel(qkernel=Beta(1,1)),
     expected = Normal(1, 0.1),
     wgds     = [
             (lca="ath", t=rand(), q=rand()),

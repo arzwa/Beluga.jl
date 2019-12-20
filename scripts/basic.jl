@@ -5,7 +5,6 @@ using Beluga, Parameters
 
 # branch model
 begin
-    ddir = "test/data"
     nw = open("test/data/dicots/plants2.nw", "r") do f ; readline(f); end
     df = CSV.read("test/data/dicots/dicots-f01-100.csv", delim=",")
     d, p = DLWGD(nw, df, 1., 1., 0.9)

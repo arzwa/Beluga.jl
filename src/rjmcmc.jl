@@ -222,7 +222,7 @@ function rjmcmc!(chain, n; trace=1, show=10, rjstart=0, rootequal=false)
         move!(chain, rootequal=rootequal)
         i % trace == 0 ? trace!(chain) : nothing
         if i % show == 0
-            logmcmc(stdout, last(chain.trace))
+            logmcmc(stdout, chain)
             flush(stdout)
         end
         # NOTE: just to be sure there are no rogue nodes in the tree
@@ -244,14 +244,18 @@ function mcmc!(chain, n; trace=1, show=10)
     end
 end
 
-function logmcmc(io::IO, df)
-    cols1 = Symbol.(["gen", "k", "k2", "k3"])
+function logmcmc(io::IO, chain)
+    @unpack trace, kernel = chain
+    x = last(trace)
+    cols1 = Symbol.(["k", "k2", "k3"])
     cols2 = Symbol.(["λ1", "λ2", "λ3", "μ1", "μ2", "μ3"])
     cols3 = Symbol.(["logp", "logπ", "η1"])
+    gen   = x[:gen]
+    pjump = kernel.accepted / gen
     write(io, "|", join(
-        [@sprintf("%7d,%3d,%2d,%2d", df[cols1]...);
-        [@sprintf("%6.3f", df[x]) for x in cols2]], ","), " ⋯ ",
-        join([@sprintf("%6.3f", df[x]) for x in cols3], ", "), "\n")
+        [@sprintf("%7d,%5.2f,%3d,%2d,%2d", gen, pjump, x[cols1]...);
+        [@sprintf("%6.3f", x[i]) for i in cols2]], ","), " ⋯ ",
+        join([@sprintf("%6.3f", x[i]) for i in cols3], ", "), "\n")
 end
 
 function move!(chain; rootequal::Bool=false)
