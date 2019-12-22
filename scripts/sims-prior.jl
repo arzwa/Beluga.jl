@@ -10,10 +10,10 @@ config = (
     treefile = "test/data/sim100/plants2.nw",
     outdir   = length(ARGS) > 0 ? ARGS[1] : "/tmp/sims",
     clade1   = [:bvu, :sly, :ugi, :cqu],
-    N        = 100,
+    N        = 50,
     rj       = true,
     pp       = true,
-    niter    = 2500,
+    niter    = 2000,
     burnin   = 500,
     theta0   = 1.5, sigma0 = 0.5, cov0 = 0.45,
     sigma    = 1.0, cov    = 0.0,
@@ -29,7 +29,7 @@ simconfig = (
     Σ    = [0.1 0.05 ; 0.05 0.1],
     qa   = 1.5,  qb = 2.,
     ηa   = 5.0, ηb  = 1.0,
-    ksim = Binomial(10, 0.5),
+    ksim = Binomial(10, 0.1),
 )
 
 # methods ______________________________________________________________________
@@ -48,7 +48,7 @@ function addrandwgds!(model, πk, πq)
 end
 
 function randmodel!(m, θ0, Σ, πk, πq)
-    rates = rand(MvNormal(θ0, Σ), Beluga.ne(m)+1)
+    rates = exp.(rand(MvNormal(θ0, Σ), Beluga.ne(m)+1))
     Beluga.setrates!(m, rates)
     wgds = addrandwgds!(m, πk, πq)
     m, wgds
@@ -71,14 +71,13 @@ function rj_inference(nw, df, prior, kernel, n=6000, nt=Branch)
     chain
 end
 
-function output(chain, model, wgds, burnin=1000)
+function output(chain, rates, η, wgds, burnin=1000)
     trace = chain.trace[burnin:end,:]
-    rates = Beluga.getrates(model)
-    η = model[1][:η]
     qs = Dict(Symbol("q$i")=>model[i][:q] for (i,wgd) in sort(wgds))
     λs = Dict(Symbol("λ$i")=>rates[1,i] for i in 1:size(rates)[2])
     μs = Dict(Symbol("μ$i")=>rates[2,i] for i in 1:size(rates)[2])
     d = merge(qs, λs, μs)
+    d[:η1] = η
     df = DataFrame(:variable=>collect(keys(sort(d))),
         :trueval=>collect(values(sort(d))))
     df = join(df, describe(trace,
@@ -130,6 +129,7 @@ function main(config, simconfig)
 
     @unpack ksim, qa, qb, θ0, Σ = simconfig
     model, wgds = randmodel!(m, θ0, Σ, ksim, Beta(qa, qb))
+    rates = Beluga.getrates(model)
     data = simulate(model, N, clade1)
     @info "rates" Beluga.getrates(model)
     @info "WGDs" wgds Beluga.getwgds(model)
@@ -140,7 +140,7 @@ function main(config, simconfig)
              fixed_inference(nw, data, wgds, infprior, n)
     wgdtrace = get_wgdtrace(c)
 
-    out = output(c, model, wgds, burnin)
+    out = output(c, rates, η, wgds, burnin)
     bfs = branch_bayesfactors(c, burnin)
     write_wgds(joinpath(outdir, "wgds.csv"), wgds)
     CSV.write(joinpath(outdir, "sim.csv"), out)
