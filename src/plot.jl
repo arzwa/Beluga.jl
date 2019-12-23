@@ -1,41 +1,136 @@
-#
-# @with_kw struct TreeLayout
-#     coords::Dict{Int64,Tuple}
-#     values::Dict{Int64,Float64}  = Dict{Int64,Float64}()
-#     paths ::Array{Tuple}
-# end
-#
-# TreeLayout(t::DLWGD) = TreeLayout(t[1])
-#
-# function TreeLayout(t::TreeNode)
-#     coords = Dict{Int64,Tuple}()
-#     paths  = Tuple[]
-#     root = t[1]
-#     yleaf = -1.
-#
-#     function walk(n)
-#         if isleaf(n)
-#             yleaf += 1
-#             x = parentdist(n, root)
-#             coords[n.i] = (x, yleaf)
-#             return yleaf
-#         else
-#             u = []
-#             for c in n.c
-#                 push!(u, walk(c))
-#                 push!(paths, (n.i, c.i))
-#             end
-#             y = sum(u)/length(u)
-#             x = parentdist(n, root)
-#             coords[n.i] =(x, y)
-#             return y
-#         end
-#     end
-#     walk(root)
-#     TreeLayout(coords=coords, paths=paths)
-# end
-#
-# # using plots; the line_z arg could be used for gradients
+
+
+@with_kw mutable struct TreeLayout
+    coords::Dict{Int64,Tuple}
+    paths ::Array{Tuple}
+    values::Dict{Int64,Float64}    = Dict{Int64,Float64}()
+    colors::Dict{Int64,RGB}        = Dict{Int64,RGB}()
+    range ::Tuple{Float64,Float64} = (0., 0.)
+end
+
+TreeLayout(t::DLWGD, args...) = TreeLayout(t[1], args...)
+
+function TreeLayout(chain; burnin=1000)
+    TreeLayout(chain.trace, chain.model; burnin=burnin)
+end
+
+function TreeLayout(trace, model; burnin=1000)
+    df = trace[burnin+1:end,:]
+    lcols = [Symbol("λ$i") for i=1:Beluga.ne(model)+1]
+    mcols = [Symbol("μ$i") for i=1:Beluga.ne(model)+1]
+    l = mean(log10.(Matrix(df[!,lcols])), dims=1)
+    m = mean(log10.(Matrix(df[!,mcols])), dims=1)
+    d = deepcopy(model)
+    Beluga.setrates!(d, [l ; m])
+    mn = minimum([l ; m])
+    mx = maximum([l ; m])
+    tl1 = TreeLayout(d, :λ)
+    tl2 = TreeLayout(d, :μ)
+    setcolors!(tl1, mn, mx)
+    setcolors!(tl2, mn, mx)
+    (tl1, tl2)
+end
+
+function TreeLayout(t::TreeNode, s::Symbol=:λ)
+    coords = Dict{Int64,Tuple}()
+    paths  = Tuple[]
+    values = Dict{Int64,Float64}()
+    root = t
+    yleaf = -1.
+    function walk(n)
+        values[n.i] = Beluga.isawgd(n) ? Beluga.nonwgdchild(n)[s] : n[s]
+        if isleaf(n)
+            yleaf += 1
+            x = Beluga.parentdist(n, root)
+            coords[n.i] = (x, yleaf)
+            return yleaf
+        else
+            u = []
+            for c in n.c
+                push!(u, walk(c))
+                push!(paths, (n.i, c.i))
+            end
+            y = sum(u)/length(u)
+            x = Beluga.parentdist(n, root)
+            coords[n.i] =(x, y)
+            return y
+        end
+    end
+    walk(root)
+    tl = TreeLayout(coords=coords, paths=paths, values=values)
+    setcolors!(tl)
+    tl
+end
+
+function setcolors!(tl, mn=minimum(values(tl.values)),
+        mx=maximum(values(tl.values)); cs=ColorSchemes.viridis,)
+    for (k, v) in tl.values
+        tl.colors[k] = get(cs, (v - mn)/(mx - mn))
+    end
+    tl.range = (mn, mx)
+end
+
+function drawtree(tl::TreeLayout)
+    # quite general, for colored and normal trees
+    # linewidth etc. are assumed to be set
+    @unpack coords, paths, colors = tl
+    for (a,b) in paths
+        p1 = Point(coords[a]...)
+        p2 = Point(coords[b]...)
+        p3 = Point(p1.x, p2.y)
+        setblend(blend(p1, p3, colors[a], colors[b]))
+        poly([p1, p3, p2])
+        Luxor.strokepath()
+    end
+end
+
+function leaflabels(tl::TreeLayout, labels)
+    for (k, v) in labels
+        p = tl.coords[k]
+        q = Luxor.Point(0., p[2])
+        settext(string(v), q, valign="center")
+    end
+end
+
+function dimensions(tl::TreeLayout)
+    x = [x[1] for (k,x) in tl.coords]
+    y = [x[2] for (k,x) in tl.coords]
+    minimum(x), maximum(x), minimum(y), maximum(y)
+end
+
+function get_colorbar(; breaks=10)
+    path = []
+    c = 0.
+    y = 0.
+    Δy = 1/breaks
+    for i = 1:breaks
+        push!(path, (Luxor.Point(0., y), Luxor.Point(0., y+Δy), 1-y, 1-y+Δy))
+        y += Δy
+    end
+    return path
+end
+
+# draw a colorbar
+function draw_colorbar(cbar, minv, maxv; pad=0.2)
+    for p in cbar
+        ca = get(ColorSchemes.viridis, p[3])
+        cb = get(ColorSchemes.viridis, p[4])
+        bl = Luxor.blend(p[1], p[2], cb, ca)
+        Luxor.line(p[1], p[2])
+        Luxor.setblend(bl)
+        Luxor.strokepath()
+    end
+    Luxor.setcolor("black")
+    s1 = @sprintf " %3.2f" minv
+    s2 = @sprintf " %3.2f" maxv
+    p1 = Luxor.Point(cbar[1][1].x   + cbar[1][1].x*pad,   cbar[1][1].y)
+    p2 = Luxor.Point(cbar[end][2].x + cbar[end][2].x*pad, cbar[end][2].y)
+    Luxor.settext(s2, p1, valign="center", halign="left")
+    Luxor.settext(s1, p2, valign="center", halign="left")
+end
+
+
+# # using plots; the line_z arg could be used for gradients ____________________
 # function tplot(tl::TreeLayout)
 #     @unpack paths, coords = tl
 #     p = Plots.plot(legend=false, grid=false, yticks=false)
