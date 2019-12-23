@@ -1,7 +1,7 @@
-using CSV, Beluga, DataFrames
+using CSV, Beluga, DataFrames, RecipesBase
 using PhyloTree, Luxor, ColorSchemes, Parameters, Printf
 import Luxor: RGB
-include("src/plot.jl")
+include("../src/plot.jl")
 
 begin
     trace = CSV.read("/home/arzwa/rjumpwgd/data/dicots/irmcmc_2223618/trace.csv")
@@ -12,7 +12,7 @@ end
 
 begin
     trace = CSV.read("/home/arzwa/rjumpwgd/data/monocots/irmcmc_2224671/trace.csv")
-    treefile = "test/data/monocots/monocots.nw"
+    treefile = "test/data/monocots/monocot.nw"
     nw = open(treefile, "r") do f ; readline(f); end
     model, data = DLWGD(nw, 1., 1., 0.9, Branch)
 end
@@ -20,7 +20,7 @@ end
 
 begin
     w, h = 400, 300
-    d = Drawing(w, h, :svg, "/home/arzwa/rjumpwgd/img/dicots-doubletree.svg");
+    d = Drawing(w, h, :svg, "/home/arzwa/rjumpwgd/img/monocots-doubletree.svg");
     sethue("black")
     setline(3)
     origin()
@@ -38,7 +38,7 @@ begin
     Luxor.translate(1.19*(xmx-xmn), -0.0)
     sethue("black")
     setfont("mono", 12)
-    leaflabels(tl1, chain.model.leaves)
+    leaflabels(tl1, model.leaves)
 
     Luxor.translate(-1.3xmx, 0.5ymx)
     Luxor.scale(0.1,4)
