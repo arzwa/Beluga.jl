@@ -70,7 +70,7 @@ function setcolors!(tl, mn=minimum(values(tl.values)),
     tl.range = (mn, mx)
 end
 
-function drawtree(tl::TreeLayout)
+function drawtree!(tl::TreeLayout)
     # quite general, for colored and normal trees
     # linewidth etc. are assumed to be set
     @unpack coords, paths, colors = tl
@@ -84,7 +84,7 @@ function drawtree(tl::TreeLayout)
     end
 end
 
-function leaflabels(tl::TreeLayout, labels)
+function leaflabels!(tl::TreeLayout, labels)
     for (k, v) in labels
         p = tl.coords[k]
         q = Luxor.Point(0., p[2])
@@ -98,7 +98,7 @@ function dimensions(tl::TreeLayout)
     minimum(x), maximum(x), minimum(y), maximum(y)
 end
 
-function get_colorbar(; breaks=10)
+function getcolorbar(; breaks=10)
     path = []
     c = 0.
     y = 0.
@@ -111,7 +111,7 @@ function get_colorbar(; breaks=10)
 end
 
 # draw a colorbar
-function draw_colorbar(cbar, minv, maxv; pad=0.2)
+function drawcolorbar!(cbar, minv, maxv; pad=0.2)
     for p in cbar
         ca = get(ColorSchemes.viridis, p[3])
         cb = get(ColorSchemes.viridis, p[4])
@@ -128,6 +128,14 @@ function draw_colorbar(cbar, minv, maxv; pad=0.2)
     Luxor.settext(s2, p1, valign="center", halign="left")
     Luxor.settext(s1, p2, valign="center", halign="left")
 end
+
+function internalnodes!(tl::TreeLayout, model::DLWGD)
+    for (n,x) in tl.coords
+        isleaf(model[n]) ? continue : nothing
+        Luxor.settext(" $n", Luxor.Point(x...), valign="center", halign="left")
+    end
+end
+
 
 
 # # using plots; the line_z arg could be used for gradients ____________________

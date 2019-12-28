@@ -369,7 +369,7 @@ end
 
 move_wgdrates!(chain, n) = move_wgdrates!(chain, chain.prior, n)
 
-function move_wgdrates!(chain, prior::IidRevJumpPrior, n)
+function move_wgdrates!(chain, prior, n)
     @unpack data, state, model, props, prior = chain
     q = n[:q]
     child = nonwgdchild(n)
@@ -537,6 +537,16 @@ function move_rmwgd!(chain, kernel::Union{DropKernel,BranchKernel})
         n[:μ] = μ
         insertwgd!(chain.model, child, wgdnode, wgdafter)
         rev!(data)
+    end
+end
+
+function addrandwgds!(model::DLWGD, data::PArray, k, πq)
+    for i=1:k
+        n, t = Beluga.randpos(model)
+        q = rand(πq)
+        wgdnode = insertwgd!(model, n, t, q)
+        child = Beluga.nonwgdchild(wgdnode)
+        extend!(data, n.i)
     end
 end
 

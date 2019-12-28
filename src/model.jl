@@ -89,6 +89,16 @@ function insertwgd!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
     insertwgd!(d, n, w, a)
 end
 
+function insertwgt!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
+    @assert !isroot(n) "Cannot add WGT above root node"
+    @assert n[:t] - t > 0. "Invalid WGT time $(n[:t]) - $t < 0."
+    parent = n.p
+    i = maximum(keys(d.nodes))+1
+    w = wgtnode(i, parent, q, n[:t] - t)
+    a = wgdafternode(i+1, w)
+    insertwgd!(d, n, w, a)
+end
+
 function insertwgd!(d::DLWGD{T}, n::N, w::N, a::N) where {T,N<:ModelNode{T}}
     # NOTE: assumes `w` and `a` have their parents already but not children
     n.p.c = setdiff(n.p.c, Set([n])) # remove n from its parent's children
@@ -104,7 +114,7 @@ function insertwgd!(d::DLWGD{T}, n::N, w::N, a::N) where {T,N<:ModelNode{T}}
 end
 
 function removewgd!(d::DLWGD, n::ModelNode, reindex::Bool=true, set::Bool=true)
-    @assert iswgd(n) "Not a WGD node $i"
+    @assert iswgm(n) "Not a WGD/T node $i"
     @assert haskey(d.nodes, n.i) "Node not in model!"
     parent = n.p
     child = first(first(n))
@@ -165,7 +175,7 @@ randwgd(model::DLWGD) = model[rand(getwgds(model))]
 function getwgds(model)
     wgds = Int64[]; i = maximum(keys(model.nodes))
     while isawgd(model[i])
-        iswgd(model[i]) ? push!(wgds, i) : nothing
+        iswgm(model[i]) ? push!(wgds, i) : nothing
         i -= 1
     end
     wgds
@@ -255,10 +265,12 @@ function (model::DLWGD{T,V})(θ::Vector{Y}) where {T<:Real,V<:ModelNode{T},Y<:Re
         elseif issp(x)
             d[x.i] = x_ = spnode(x.i, y, λ[x.i], μ[x.i], Y(x[:t]))
             push!(y, x_)
-        elseif iswgd(x)
+        elseif iswgm(x)
             j = x.i % n
             j -= (j - 1) ÷ 2
-            d[x.i] = x_ = wgdnode(x.i, y, q[j], Y(x[:t]))
+            d[x.i] = x_ = iswgd(x) ?
+                wgdnode(x.i, y, q[j], Y(x[:t])) :
+                wgtnode(x.i, y, q[j], Y(x[:t]))
             push!(y, x_)
         elseif iswgdafter(x)
             d[x.i] = x_ = wgdafternode(x.i, y)

@@ -50,6 +50,12 @@ wgdnode(i::Int64, p::V, q::T, t::T) where {T<:Real,V<:ModelNode{T}} =
         W=zeros(size(p.x.W)),
         kind=:wgd), p)
 
+wgtnode(i::Int64, p::V, q::T, t::T) where {T<:Real,V<:ModelNode{T}} =
+    TreeNode(i, eltype(p)(
+        θ=Dict(:t=>t,:q=>q),
+        W=zeros(size(p.x.W)),
+        kind=:wgt), p)
+
 wgdafternode(i::Int64, p::V) where {T<:Real,V<:ModelNode{T}} =
     TreeNode(i, eltype(p)(
         θ=Dict(:t=>0.),
@@ -62,8 +68,11 @@ Base.getindex(n::ModelNode, args::Symbol...) = [n.x.θ[s] for s in args]
 Base.eltype(n::TreeNode{T}) where T = T
 
 iswgd(n::ModelNode) = n.x.kind == :wgd
+iswgt(n::ModelNode) = n.x.kind == :wgt
+iswgm(n::ModelNode) = iswgd(n) || iswgt(n)
 iswgdafter(n::ModelNode) = n.x.kind == :wgdafter
-isawgd(n::ModelNode) = iswgd(n) || iswgdafter(n)
+iswgtafter(n::ModelNode) = !(isnothing(n.p)) && n.p.x.kind == :wgt
+isawgd(n::ModelNode) = iswgd(n) || iswgdafter(n) || iswgt(n) || iswgtafter(n)
 issp(n::ModelNode) = n.x.kind == :sp
 gete(n::ModelNode, i::Int64) = n.x.ϵ[i]
 getw(n::ModelNode, i::Int64, j::Int64) = n.x.W[i,j]
@@ -134,6 +143,13 @@ function setϵ!(n::ModelNode{T}) where T<:Real
         λ, μ = getλμ(n, c)
         c.x.ϵ[1] = ϵc = gete(c, 2)
         n.x.ϵ[2] = c.x.ϵ[1] = q*ϵc^2 + (1. - q)*ϵc
+    elseif iswgt(n)
+        # q1, q2 = n[:q1, :q2]
+        q = n[:q]
+        c = first(n.c)
+        λ, μ = getλμ(n, c)
+        c.x.ϵ[1] = ϵc = gete(c, 2)
+        n.x.ϵ[2] = c.x.ϵ[1] = q*ϵc^3 + 2q*(1. - q)*ϵc^2 + (1. - q)^2*ϵc
     else
         n.x.ϵ[2] = one(T)
         for c in n.c
@@ -155,6 +171,9 @@ function setW!(n::ModelNode{T}) where T<:Real
     if iswgdafter(n)
         q = n.p[:q]
         wstar_wgd!(n.x.W, n[:t], λ, μ, q, ϵ)
+    elseif iswgtafter(n)
+        q = n.p[:q]
+        wstar_wgt!(n.x.W, n[:t], λ, μ, q, ϵ)
     else
         wstar!(n.x.W, n[:t], λ, μ, ϵ)
     end
@@ -181,6 +200,21 @@ function wstar_wgd!(w, t, λ, μ, q, ϵ)
     mmax = size(w)[1]-1
     for i=1:mmax, j=2:mmax
         w[i+1, j+1] =  w[2,2]*w[i, j] + w[2,3]*w[i, j-1]
+    end
+end
+
+function wstar_wgt!(w, t, λ, μ, q, ϵ)
+    # compute w* (Csuros Miklos 2009)
+    q1 = q
+    q2 = 2q*(1. - q)
+    q3 = (1. - q)^2
+    w[1,1] = 1.
+    w[2,2] = q1*(1. - ϵ) + 2*q2*ϵ*(1. - ϵ) + 3*q3*(ϵ^2)*(1. - ϵ)
+    w[2,3] = q2*(1. - ϵ)^2 + 3q3*ϵ*(1. - ϵ)^2
+    w[2,4] = q3*(1. - ϵ)^3
+    mmax = size(w)[1]-1
+    for i=1:mmax, j=3:mmax
+        w[i+1, j+1] =  w[2,2]*w[i, j] + w[2,3]*w[i, j-1] + w[2,4]*w[i, j-2]
     end
 end
 

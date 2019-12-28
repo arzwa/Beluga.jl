@@ -203,3 +203,38 @@ function gradient(pr::IidRevJumpPrior, m::DLWGD{T}) where T<:Real
     g = ForwardDiff.gradient(f, v)
     return g::Vector{Float64}
 end
+
+
+# Synteny network prior ________________________________________________________
+@with_kw struct SyntenyRevJumpPrior{T,U,W,X,Y} <: RevJumpPrior
+    lλ::T = Uniform(-20, -3)
+    lμ::U = Normal()
+    πq::W = Beta()
+    πη::X = Beta(3,1)
+    πK::Y = Geometric(0.01)
+    Tl::Float64
+end
+
+function logpdf(prior::SyntenyRevJumpPrior, d::DLWGD{T}) where T<:Real
+    @unpack lλ, lμ, πη, πq, πK, Tl = prior
+    p = 0.; k = 0
+    N = ne(d)
+    X0 = log.(d[1][:λ, :μ])
+    for (i, n) in d.nodes
+        if iswgdafter(n)
+            continue
+        elseif iswgd(n)
+            p += logpdf(πq, n[:q]) - log(Tl)
+            k += 1
+        elseif isroot(n)
+            p += logpdf(πη, n[:η])
+            p += logpdf(lλ, X0[1])
+            p += logpdf(lμ, X0[2])
+        else
+            rates = log.(n[:λ, :μ])
+            p += logpdf(lλ, rates[1])
+            p += logpdf(lμ, rates[2])
+        end
+    end
+    p + logpdf(πK, k)
+end
