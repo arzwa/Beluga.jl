@@ -514,7 +514,7 @@ end
 """
     asvector(d::DLWGD)
 
-Get a paraeter vector for the DLWGD model, structured as [λ1, …, λn, μ1, …, μn,
+Get a parameter vector for the DLWGD model, structured as [λ1, …, λn, μ1, …, μn,
 q1, …, qk, η].
 """
 function asvector(d::DLWGD)
