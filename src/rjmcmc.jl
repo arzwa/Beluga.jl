@@ -1,15 +1,14 @@
-# NOTE:
-# * update! will be faster than using a deepcopy of the model
-# * initial implementation, hardcoded for only two correlated characters
-# * the proposal mechnism is not yet type stable...
-
 const Proposals = Dict{Int64,Vector{AdaptiveUvProposal{T,V} where {T,V}}}
 const State = Dict{Symbol,Union{Float64,Int64}}
-
 
 # reversible jump kernels
 abstract type RevJumpKernel end
 
+"""
+    SimpleKernel
+
+Reversible jump kernel that only introduces a WGD while not chnging λ or μ.
+"""
 @with_kw mutable struct SimpleKernel <: RevJumpKernel
     qkernel ::Beta{Float64} = Beta(1,1)
     accepted::Int64 = 0
@@ -22,6 +21,12 @@ end
 
 reverse(kernel::SimpleKernel, q::Float64) = logpdf(kernel.qkernel, q)
 
+"""
+    DropKernel
+
+Reversible jump kernel that introduces a WGD and decreases λ on the associated
+branch.
+"""
 @with_kw mutable struct DropKernel <: RevJumpKernel
     qkernel ::Beta{Float64} = Beta(1,1)
     λkernel ::Exponential{Float64} = Exponential(0.1)
@@ -39,6 +44,12 @@ function reverse(kernel::DropKernel, λ::Float64, μ::Float64, q::Float64)
     exp(θ), μ, logpdf(kernel.qkernel, q)
 end
 
+"""
+    BranchKernel
+
+Reversible jump kernel that introduces a WGD, decreases λ and increases μ
+on the associated branch.
+"""
 @with_kw mutable struct BranchKernel <: RevJumpKernel
     qkernel ::Beta{Float64} = Beta(1,1)
     λkernel ::Exponential{Float64} = Exponential(0.1)
@@ -62,11 +73,18 @@ function reverse(kernel::BranchKernel, λ::Float64, μ::Float64, q::Float64)
 end
 
 # reversible jump chain
+"""
+    RevJumpChain
+
+Reversible jump chain struct for DLWGD model inference.
+
+!!! note After construction, an explicit call to `init!` is required.
+"""
 @with_kw mutable struct RevJumpChain{T<:Real,V<:ModelNode{T},
         M<:RevJumpPrior,K<:RevJumpKernel}
     data  ::PArray{T}
     model ::DLWGD{T,V}
-    prior ::M            = IidRevJumpPrior()
+    prior ::M            = IRRevJumpPrior()
     props ::Proposals    = Proposals()
     state ::State        = State(:gen=>0, :logp=>NaN, :logπ=>NaN, :k=>0)
     trace ::DataFrame    = DataFrame()
@@ -77,6 +95,11 @@ Base.rand(df::DataFrame) = df[rand(1:size(df)[1]),:]
 cols(chain::RevJumpChain, args...) = cols(chain.trace, args...)
 cols(df::DataFrame, s) = [n for n in names(df) if startswith(string(n), s)]
 
+"""
+    init!(chain::RevJumpChain)
+
+Initialize the chain.
+"""
 function init!(chain::RevJumpChain)
     @unpack data, model, prior, state, props = chain
     setstate!(state, model)
@@ -162,58 +185,14 @@ function tracewgds(chain)
     d
 end
 
-# add WGDs from array of named tuples e.g. (lca="ath,cpa", t=rand(), q=rand())
-function addwgds!(m::DLWGD, p::PArray, config::Array)
-    for x in config
-        n = lca_node(m, Symbol.(split(x.lca, ","))...)
-        insertwgd!(m, n, n[:t]*x.t, x.q)
-        extend!(p, n.i)
-    end
-end
-
-
-# Custom Proposals
-# ================
-# Extension of AdaptiveMCMC lib, proposal moves for vectors [q, λ, μ]
-WgdProposals(ϵ=[1.0, 1.0, 1.0], ti=25) = AdaptiveUvProposal[
-    AdaptiveUvProposal(kernel=Uniform(-e, e), tuneinterval=ti, move=m)
-        for (m, e) in zip([wgdrw, wgdrand, wgdiid], ϵ)]
-
-function wgdrw(k::AdaptiveUvProposal, x::Vector{Float64})
-    xp = x .+ rand(k)
-    xp[1] = reflect(xp[1], 0., 1.)
-    return xp, 0.
-end
-
-function wgdrand(k::AdaptiveUvProposal, x::Vector{Float64})
-    i = rand(1:3)
-    xp = copy(x)
-    xp[i] = x[i] + rand(k)
-    i == 1 ? xp[1] = reflect(xp[1], 0., 1.) : nothing
-    return xp, 0.
-end
-
-function wgdiid(k::AdaptiveUvProposal, x::Vector{Float64})
-    xp = x .+ rand(k, 3)
-    xp[1] = reflect(xp[1], 0., 1.)
-    return xp, 0.
-end
-
-# not sure about this one
-function wgdqλ(k::AdaptiveUvProposal, x::Vector{Float64})
-    xp = copy(x)
-    r = rand(k)
-    xp[1] += r
-    xp[2] -= r
-    xp[1] = reflect(xp[1], 0., 1.)
-    return xp, 0.
-end
-
-
 # MCMC
-# =====
-function rjmcmc!(chain, n; trace=1, show=10, rjstart=0, rootequal=false)
-    Tl = chain.prior.Tl
+rjmcmc!(chain, n; kwargs...) = rjmcmc!(chain, chain.prior, n; kwargs...)
+  mcmc!(chain, n; kwargs...) =   mcmc!(chain, chain.prior, n; kwargs...)
+
+function rjmcmc!(chain, prior::IRRevJumpPrior, n::Int64;
+        trace=1, show=10, rjstart=0, rootequal=false)
+    Tl = prior.Tl
+    logheader(stdout)
     for i=1:n
         chain.state[:gen] += 1
         if i > rjstart
@@ -232,13 +211,14 @@ function rjmcmc!(chain, n; trace=1, show=10, rjstart=0, rootequal=false)
     end
 end
 
-function mcmc!(chain, n; trace=1, show=10)
+function mcmc!(chain, prior::IRRevJumpPrior, n::Int64; trace=1, show=10)
+    logheader(stdout)
     for i=1:n
         chain.state[:gen] += 1
         move!(chain)
         i % trace == 0 ? trace!(chain) : nothing
         if i % show == 0
-            logmcmc(stdout, last(chain.trace))
+            logmcmc(stdout, chain)
             flush(stdout)
         end
     end
@@ -249,13 +229,18 @@ function logmcmc(io::IO, chain)
     x = last(trace)
     cols1 = Symbol.(["k", "k2", "k3"])
     cols2 = Symbol.(["λ1", "λ2", "λ3", "μ1", "μ2", "μ3"])
-    cols3 = Symbol.(["logp", "logπ", "η1"])
     gen   = x[:gen]
     pjump = kernel.accepted / gen
     write(io, "|", join(
         [@sprintf("%7d,%5.2f,%3d,%2d,%2d", gen, pjump, x[cols1]...);
         [@sprintf("%6.3f", x[i]) for i in cols2]], ","), " ⋯ ",
-        join([@sprintf("%6.3f", x[i]) for i in cols3], ", "), "\n")
+         @sprintf("%10.3f,%8.3f,%6.3f", x[:logp], x[:logπ], x[:η1]), "\n")
+end
+
+function logheader(io::IO)
+    write(io, "|", @sprintf(
+        "%7s,%5s,%3s,%2s,%2s,%6s,%6s,%6s,%6s,%6s,%6s … %10s,%8s,%6s\n",
+        split("gen pjmp k k2 k3 λ1 λ2 λ3 μ1 μ2 μ3 logp logπ η")...))
 end
 
 function move!(chain; rootequal::Bool=false)
@@ -369,7 +354,7 @@ end
 
 move_wgdrates!(chain, n) = move_wgdrates!(chain, chain.prior, n)
 
-function move_wgdrates!(chain, prior, n)
+function move_wgdrates!(chain, prior::IRRevJumpPrior, n)
     @unpack data, state, model, props, prior = chain
     q = n[:q]
     child = nonwgdchild(n)
@@ -412,7 +397,7 @@ function move_addwgd!(chain, kernel::SimpleKernel)
     n, t  = randpos(chain.model)
     child = nonwgdchild(n)
     q, lp = forward(kernel)
-    wgdnode = insertwgd!(chain.model, n, t, q)
+    wgdnode = addwgd!(chain.model, n, t, q)
     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
     l_ = logpdf!(child, data)
     p_ = logpdf(prior, chain.model)
@@ -460,7 +445,7 @@ function move_rmwgd!(chain, kernel::SimpleKernel)
         state[:logπ] = p_
         kernel.accepted += 1
     else
-        insertwgd!(chain.model, child, wgdnode, wgdafter)
+        addwgd!(chain.model, child, wgdnode, wgdafter)
         rev!(data)
     end
 end
@@ -478,7 +463,7 @@ function move_addwgd!(chain, kernel::Union{DropKernel,BranchKernel})
     q, λ_, μ_, lp = forward(kernel, λ, μ)
     child[:λ] = λ_
     child[:μ] = μ_
-    wgdnode = insertwgd!(chain.model, n, t, q)
+    wgdnode = addwgd!(chain.model, n, t, q)
     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
     l_ = logpdf!(child, data)
     p_ = logpdf(prior, chain.model)
@@ -535,7 +520,7 @@ function move_rmwgd!(chain, kernel::Union{DropKernel,BranchKernel})
     else
         n[:λ] = λ
         n[:μ] = μ
-        insertwgd!(chain.model, child, wgdnode, wgdafter)
+        addwgd!(chain.model, child, wgdnode, wgdafter)
         rev!(data)
     end
 end
@@ -544,242 +529,8 @@ function addrandwgds!(model::DLWGD, data::PArray, k, πq)
     for i=1:k
         n, t = Beluga.randpos(model)
         q = rand(πq)
-        wgdnode = insertwgd!(model, n, t, q)
+        wgdnode = addwgd!(model, n, t, q)
         child = Beluga.nonwgdchild(wgdnode)
         extend!(data, n.i)
     end
 end
-
-# function move_addwgd!(chain)
-#     @unpack data, state, model, props, prior = chain
-#     @unpack Tl = prior
-#     if logpdf(prior.πK, nwgd(chain.model)+1) == -Inf
-#         return
-#     end
-#     n, t  = randpos(chain.model)
-#     child = nonwgdchild(n)
-#     propq = chain.props[0][2]
-#     propλ = chain.props[0][3]
-#
-#     λ, μ  = child[:λ, :μ]
-#     q::Float64, r1::Float64  = propq(0.)
-#     u::Float64 = rand(propλ)
-#     θ = log(λ) - u
-#     child[:λ] = exp(θ)  # no updte needed, as update is performed at insertion
-#     # if rand() < 0.5
-#     #     θ = log(λ) - u
-#     #     child[:λ] = exp(θ)
-#     #     @info "λ" λ exp(θ)
-#     # else
-#     #     θ = log(μ) + u
-#     #     child[:μ] = exp(θ)
-#     #     @info "μ" μ exp(θ)
-#     # end
-#     # θ = log(λn) - propλ.kernel.θ*q
-#     # θ = log(λn) - u*q
-#     # @show exp(θ), λn
-#     # @show q, pprop, logpdf(propq.kernel, q), log(tlen)
-#     pprop = logpdf(propq.kernel, q) - log(Tl)
-#
-#     # @printf " ⋅ %3.3f → %3.3f\n" λn child[:λ]
-#     wgdnode = insertwgd!(chain.model, n, t, q)
-#     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
-#     l_ = logpdf!(child, data)
-#     p_ = logpdf(prior, chain.model)
-#     hr = l_ + p_ - state[:logp] - state[:logπ] - pprop
-#     if log(rand()) < hr
-#         state[:logp] = l_
-#         state[:logπ] = p_
-#         state[:k] += 1
-#         s = Symbol("k$(nonwgdchild(wgdnode).i)")
-#         state[s] = haskey(state, s) ? state[s] + 1 : 1
-#         update!(state, wgdnode, :q)
-#         update!(state, child, :λ)
-#         # update!(state, child, :μ)
-#         set!(data)
-#         props[wgdnode.i] = [AdaptiveUnitProposal() ; WgdProposals()]
-#         propλ.accepted += 1
-#         propq.accepted += 1
-#     else
-#         child[:λ] = λ
-#         # child[:μ] = μ
-#         removewgd!(chain.model, wgdnode)
-#         rev!(data)
-#     end
-#     propλ.total += 1
-#     return
-# end
-#
-# function move_rmwgd!(chain)
-#     @unpack data, state, model, props, prior = chain
-#     @unpack Tl = prior
-#     if nwgd(chain.model) == 0
-#         return
-#     end
-#     propq = chain.props[0][2]
-#     propλ = chain.props[0][3]
-#     wgdnode = randwgd(chain.model)
-#     wgdafter = first(wgdnode)
-#     n  = nonwgdchild(wgdnode)
-#
-#     λ, μ  = n[:λ, :μ]
-#     u::Float64 = rand(propλ)
-#     θ = log(λ) + u
-#     n[:λ] = exp(θ)
-#     # if rand() < 0.5
-#     #     θ = log(λ) + u
-#     #     n[:λ] = exp(θ)
-#     # else
-#     #     θ = log(μ) - u
-#     #     n[:μ] = exp(θ)
-#     # end
-#     # θ = log(λn) + propλ.kernel.θ*wgdnode[:q]
-#     # θ = log(λn) + u*wgdnode[:q]
-#     # pprop = 0.
-#     pprop = logpdf(propq.kernel, wgdnode[:q]) - log(Tl)
-#
-#     child = removewgd!(chain.model, wgdnode, false)
-#     l_ = logpdf!(n, data)
-#     p_ = logpdf(prior, chain.model)
-#     hr = l_ + p_ - state[:logp] - state[:logπ] + pprop
-#     if log(rand()) < hr
-#         # upon acceptance; shrink and reindex
-#         length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)
-#         delete!(props, wgdnode.i)
-#         delete!(state, id(wgdnode, :q))
-#         reindex!(chain.model, wgdnode.i+2)
-#         reindex!(chain.props, wgdnode.i+2)
-#         set!(data)
-#         setstate!(state, chain.model)
-#         update!(state, n, :λ)
-#         # update!(state, n, :μ)
-#         state[:logp] = l_
-#         state[:logπ] = p_
-#         propλ.accepted += 1
-#     else
-#         n[:λ] = λ
-#         # n[:μ] = μ
-#         insertwgd!(chain.model, child, wgdnode, wgdafter)
-#         rev!(data)
-#     end
-#     propλ.total += 1
-#     return
-# end
-
-#
-#
-# # previous moves, probably wrong?? or accidentally correct...
-# function move_addwgd!(chain)
-#     @unpack data, state, model, props, prior = chain
-#     if logpdf(prior.πK, nwgd(chain.model)+1) == -Inf
-#         return
-#     end
-#     n, t  = randpos(chain.model)
-#     child = nonwgdchild(n)
-#     propq = chain.props[0][2]
-#     propλ = chain.props[0][3]
-#     λn    = child[:λ]
-#     q::Float64, r1::Float64  = propq(0.)
-#     θ::Float64, r2::Float64  = propλ(log(λn))
-#
-#     child[:λ] = exp(θ)
-#     wgdnode = insertwgd!(chain.model, n, t, q)
-#     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
-#     l_ = logpdf!(child, data)
-#     p_ = logpdf(prior, chain.model)
-#     hr = l_ + p_ - state[:logp] - state[:logπ]
-#
-#     if log(rand()) < hr
-#         state[:logp] = l_
-#         state[:logπ] = p_
-#         state[:k] += 1
-#         s = Symbol("k$(nonwgdchild(wgdnode).i)")
-#         state[s] = haskey(state, s) ? state[s] + 1 : 1
-#         update!(state, wgdnode, :q)
-#         update!(state, child, :λ)
-#         set!(data)
-#         props[wgdnode.i] = [AdaptiveUnitProposal() ; WgdProposals()]
-#         propλ.accepted += 1
-#         propq.accepted += 1
-#     else
-#         child[:λ] = λn
-#         removewgd!(chain.model, wgdnode)
-#         rev!(data)
-#     end
-#     return
-# end
-#
-#
-# function move_rmwgd!(chain)
-#     @unpack data, state, model, props, prior = chain
-#     if nwgd(chain.model) == 0
-#         return
-#     end
-#     propλ = chain.props[0][3]
-#     wgdnode = randwgd(chain.model)
-#     wgdafter = first(wgdnode)
-#     n  = nonwgdchild(wgdnode)
-#     λn = n[:λ]
-#     θ::Float64, r1::Float64  = propλ(log(λn))
-#     θ  = log(λn) - (θ - log(λn))  # HACK to reverse decrease proposal
-#     n[:λ] = exp(θ)
-#     child = removewgd!(chain.model, wgdnode, false)
-#
-#     l_ = logpdf!(n, data)
-#     p_ = logpdf(prior, chain.model)
-#     hr = l_ + p_ - state[:logp] - state[:logπ]
-#     if log(rand()) < hr
-#         # upon acceptance; shrink and reindex
-#         length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)
-#         delete!(props, wgdnode.i)
-#         delete!(state, id(wgdnode, :q))
-#         reindex!(chain.model, wgdnode.i+2)
-#         reindex!(chain.props, wgdnode.i+2)
-#         set!(data)
-#         setstate!(state, chain.model)
-#         update!(state, n, :λ)
-#         state[:logp] = l_
-#         state[:logπ] = p_
-#         propλ.accepted += 1
-#     else
-#         n[:λ] = λn
-#         insertwgd!(chain.model, child, wgdnode, wgdafter)
-#         rev!(data)
-#     end
-#     return
-# end
-
-#
-# function move_wgdrates!(chain, prior::CoevolRevJumpPrior, n)
-#     @unpack data, state, model, props, prior = chain
-#     q = n[:q]
-#     parent = nonwgdparent(n)
-#     child = nonwgdchild(n)
-#     flank = rand([parent, child])
-#     rates = flank[:λ, :μ]
-#     v = [q; log.(rates)]
-#     prop = rand(props[n.i][2:end])
-#     w::Vector{Float64}, r::Float64 = prop(v)
-#     n[:q] = w[1]
-#     flank[:λ] = exp(w[2])
-#     flank[:μ] = exp(w[3])
-#     update!(child)
-#     l_ = logpdf!(child, data)  # this was n instead of child, but that doesn't
-#                                # work right? 16/12/2019
-#     p_ = logpdf(prior, model)
-#     hr = l_ + p_ - state[:logp] - state[:logπ] + r
-#     if log(rand()) < hr
-#         update!(state, n, :q)
-#         update!(state, flank, :λ, :μ)
-#         state[:logp] = l_
-#         state[:logπ] = p_
-#         set!(data)
-#         prop.accepted += 1
-#     else
-#         n[:q] = q
-#         flank[:λ] = rates[1]
-#         flank[:μ] = rates[2]
-#         update!(child)
-#         rev!(data)
-#     end
-# end

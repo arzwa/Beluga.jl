@@ -1,15 +1,15 @@
-# Prior related
-# =============
-abstract type Model end
-abstract type RevJumpPrior <: Model end
+"""
+    ConstantDistribution(x)
 
+A 'constant' distribution (Dirac mass), sometimes useful.
+"""
 struct ConstantDistribution{T}
     x::T
 end
 
 Base.rand(x::ConstantDistribution) = x
-pdf(x::ConstantDistribution, y) = 1.
-logpdf(x::ConstantDistribution, y) = 0.
+pdf(x::ConstantDistribution, y) = y ≈ x.x ? 1. : 0.
+logpdf(x::ConstantDistribution, y) = log(pdf(x, y))
 
 """
     UpperBoundedGeometric{T<:Real}
@@ -32,29 +32,29 @@ Base.rand(d::UpperBoundedGeometric) = rand(d.d)
 pdf(d::UpperBoundedGeometric, x::Int64) = pdf(d.d, x)
 logpdf(d::UpperBoundedGeometric, x::Int64) = logpdf(d.d, x)
 
+abstract type RevJumpPrior end
 
-# Coevol-like Prior
-# =================
 """
-    CoevolRevJumpPrior
+    BMRevJumpPrior
 
-Bivariate autocorrelated rates prior inspired by coevol (Lartillot & Poujol
-2010) with an Inverse Wishart prior on the unknown covariance 2×2 matrix.
-Crucially, this is defined for the `Node` based model, i.e. states at model
-nodes are assumed to be states at *nodes* of the phylogeny.
+Bivariate autocorrelated rates (Brownian motion) prior inspired by coevol
+(Lartillot & Poujol 2010) with an Inverse Wishart prior on the unknown
+covariance 2×2 matrix. Crucially, this is defined for the `Node` based model,
+i.e. states at model nodes are assumed to be states at *nodes* of the phylogeny.
 """
-@with_kw struct CoevolRevJumpPrior{T,U,V,W} <: RevJumpPrior
+@with_kw struct BMRevJumpPrior{T,U,V,W} <: RevJumpPrior
     Σ₀::Matrix{Float64}  = [500. 0. ; 0. 500.]
     X₀::T                = MvNormal([1.,1.])
     πη::U                = Beta(3., 1)
     πq::V                = Beta()
     πK::W                = Geometric(0.5)
+    Tl::Float64
     @assert isposdef(Σ₀)
 end
 
 # one-pass prior computation based on the model
-function logpdf(prior::CoevolRevJumpPrior, d::DLWGD)
-    @unpack Σ₀, X₀, πη, πq, πK = prior
+function logpdf(prior::BMRevJumpPrior, d::DLWGD)
+    @unpack Σ₀, X₀, πη, πq, πK, Tl = prior
     p = 0.; M = 2; J = 1.; k = 0
     N = ne(d)
     Y = zeros(N, M)
@@ -63,7 +63,7 @@ function logpdf(prior::CoevolRevJumpPrior, d::DLWGD)
         if iswgdafter(n)
             continue
         elseif iswgd(n)
-            p += logpdf(πq, n[:q])  # what about the time? it is also random?
+            p += logpdf(πq, n[:q]) - log(Tl)
             k += 1
         elseif isroot(n)
             p += logpdf(πη, n[:η])
@@ -87,7 +87,7 @@ function logp_pics(Σ₀, θ)
     log(J) + (q/2)*log(det(Σ₀)) - ((q + n)/2)*log(det(Σ₀ + A))
 end
 
-function Base.rand(prior::CoevolRevJumpPrior, d::DLWGD, k::Int64=-1)
+function Base.rand(prior::BMRevJumpPrior, d::DLWGD, k::Int64=-1)
     @unpack Σ₀, X₀, πη, πq, πK = prior
     model = deepcopy(d)
     Σ = rand(InverseWishart(3, Σ₀))
@@ -96,7 +96,7 @@ function Base.rand(prior::CoevolRevJumpPrior, d::DLWGD, k::Int64=-1)
     for i=1:k
         n, t = randpos(model)
         q = rand(πq)
-        wgdnode = insertwgd!(model, n, t, q)
+        wgdnode = addwgd!(model, n, t, q)
         child = nonwgdchild(wgdnode)
         wgds[wgdnode.i] = (child.i, q)
     end
@@ -120,18 +120,15 @@ function Base.rand(prior::CoevolRevJumpPrior, d::DLWGD, k::Int64=-1)
     (model=model, Σ=Σ, η=model[1,:η], rates=getrates(model), wgds=wgds)
 end
 
-
-# Independent rates pior
-# ======================
 """
-    IidRevJumpPrior
+    IRRevJumpPrior
 
 Bivariate uncorrelated rates prior with an Inverse Wishart prior on the unknown
 covariance 2×2 matrix. Crucially, this is defined for the `Branch` based model,
 i.e. states at model nodes are assumed to be states at *branches* of the
 phylogeny.
 """
-@with_kw struct IidRevJumpPrior{T,U,V,W,X} <: RevJumpPrior
+@with_kw struct IRRevJumpPrior{T,U,V,W,X} <: RevJumpPrior
     Σ₀::Matrix{Float64} = [1 0. ; 0. 1]
     X₀::T               = MvNormal([1., 1.])
     πη::U               = Beta(3., 1)
@@ -142,7 +139,7 @@ phylogeny.
     @assert isposdef(Σ₀)
 end
 
-function logpdf(prior::IidRevJumpPrior, d::DLWGD{T}) where T<:Real
+function logpdf(prior::IRRevJumpPrior, d::DLWGD{T}) where T<:Real
     @unpack Σ₀, X₀, πη, πq, πK, Tl, πE = prior
     p = 0.; M = 2; J = 1.; k = 0
     N = ne(d)
@@ -172,7 +169,7 @@ function logpdf(prior::IidRevJumpPrior, d::DLWGD{T}) where T<:Real
     p + logpdf(πK, k)
 end
 
-function Base.rand(prior::IidRevJumpPrior, d::DLWGD, k::Int64=-1)
+function Base.rand(prior::IRRevJumpPrior, d::DLWGD, k::Int64=-1)
     @unpack Σ₀, X₀, πη, πq, πK = prior
     model = deepcopy(d)
     update!(model[1], :η, rand(πη))
@@ -183,7 +180,7 @@ function Base.rand(prior::IidRevJumpPrior, d::DLWGD, k::Int64=-1)
     for i=1:k
         n, t = randpos(model)
         q = rand(πq)
-        wgdnode = insertwgd!(model, n, t, q)
+        wgdnode = addwgd!(model, n, t, q)
         child = nonwgdchild(wgdnode)
         wgds[wgdnode.i] = (child.i, q)
     end
@@ -193,48 +190,13 @@ function Base.rand(prior::IidRevJumpPrior, d::DLWGD, k::Int64=-1)
     (model=model, Σ=Σ, η=model[1,:η], rates=rates, wgds=wgds)
 end
 
-scattermat(m::DLWGD, pr::IidRevJumpPrior) = scattermat_iid(m)
+scattermat(m::DLWGD, pr::IRRevJumpPrior) = scattermat_iid(m)
 
 expectedX(λ, μ, t, X0=1) = X0*exp(t*(λ - μ))
 
-function gradient(pr::IidRevJumpPrior, m::DLWGD{T}) where T<:Real
+function gradient(pr::IRRevJumpPrior, m::DLWGD{T}) where T<:Real
     v = asvector(m)
     f = (u) -> logpdf(pr, m(u))
     g = ForwardDiff.gradient(f, v)
     return g::Vector{Float64}
-end
-
-
-# Synteny network prior ________________________________________________________
-@with_kw struct SyntenyRevJumpPrior{T,U,W,X,Y} <: RevJumpPrior
-    lλ::T = Uniform(-20, -3)
-    lμ::U = Normal()
-    πq::W = Beta()
-    πη::X = Beta(3,1)
-    πK::Y = Geometric(0.01)
-    Tl::Float64
-end
-
-function logpdf(prior::SyntenyRevJumpPrior, d::DLWGD{T}) where T<:Real
-    @unpack lλ, lμ, πη, πq, πK, Tl = prior
-    p = 0.; k = 0
-    N = ne(d)
-    X0 = log.(d[1][:λ, :μ])
-    for (i, n) in d.nodes
-        if iswgdafter(n)
-            continue
-        elseif iswgd(n)
-            p += logpdf(πq, n[:q]) - log(Tl)
-            k += 1
-        elseif isroot(n)
-            p += logpdf(πη, n[:η])
-            p += logpdf(lλ, X0[1])
-            p += logpdf(lμ, X0[2])
-        else
-            rates = log.(n[:λ, :μ])
-            p += logpdf(lλ, rates[1])
-            p += logpdf(lμ, rates[2])
-        end
-    end
-    p + logpdf(πK, k)
 end

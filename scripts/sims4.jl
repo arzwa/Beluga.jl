@@ -45,7 +45,7 @@ function fixed_inference(nw, df, wgds, prior, n=6000, nt=Branch)
     model, data = DLWGD(nw, df, 1., 1., 0.9, nt)
     chain = RevJumpChain(data=data, model=deepcopy(model), prior=prior)
     for (i, wgd) in sort(wgds)
-        wgdnode = insertwgd!(chain.model, chain.model[wgd[1]],
+        wgdnode = addwgd!(chain.model, chain.model[wgd[1]],
             rand()*chain.model[wgd[1]][:t], rand())
         extend!(chain.data, wgd[1])
     end

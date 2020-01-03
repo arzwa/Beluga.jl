@@ -5,10 +5,10 @@ using Beluga, Parameters
 
 # branch model
 begin
-    nw = open("test/data/dicots/plants2.nw", "r") do f ; readline(f); end
-    df = CSV.read("test/data/dicots/dicots-f01-100.csv", delim=",")
+    nw = open("example/dicots/dicots.nw", "r") do f ; readline(f); end
+    df = CSV.read("example/dicots/dicots-f01-25.csv", delim=",")
     d, p = DLWGD(nw, df, 1., 1., 0.9)
-    prior = IidRevJumpPrior(
+    prior = IRRevJumpPrior(
         Σ₀=[1 0. ; 0. 1],
         X₀=MvNormal(log.(ones(2)), [0.5 0.45 ; 0.45 0.5]),
         # πK=DiscreteUniform(0,20),
@@ -17,12 +17,11 @@ begin
         πη=Beta(3,1),
         Tl=treelength(d))
         # πE=LogNormal(1, 0.2))
-    chain = RevJumpChain(
-        data=deepcopy(p), model=deepcopy(d), prior=deepcopy(prior))
+    chain = RevJumpChain(data=p, model=d, prior=prior)
     init!(chain)
 end
 
-rjmcmc!(chain, 1000, trace=1, show=10)
+rjmcmc!(chain, 10, trace=1, show=1)
 
 ks = []
 for l = exp10.(-3:1), β in [1, 5, 10, 20]

@@ -12,7 +12,6 @@ module Beluga
     using MCMCChains
     using Printf
     using ForwardDiff
-    using RecipesBase
 
     import Distributions: logpdf, logpdf!, pdf
     import AdaptiveMCMC: ProposalKernel, DecreaseProposal
@@ -25,13 +24,11 @@ module Beluga
     include("rjmcmc.jl")
     include("sim.jl")
     include("post.jl")
-    # include("plot.jl")
 
-    export DuplicationLossWGDModel, DLWGD, logpdf, logpdf!
-    export insertwgd!, removewgd!, Profile, PArray, addwgds!
-    export RevJumpChain, RevJumpPrior, branchrates!, mcmc!, rjmcmc!
-    export IidRevJumpPrior, CoevolRevJumpPrior, extend!, shrink!
-    export branch_bayesfactors, UpperBoundedGeometric, get_wgdtrace
-    export Branch, Node, asvector, gradient, init!, update!, cols
-    export posterior_Σ!, posterior_E!, PostPredSim, pp_pvalues, treelength
+    export DLWGD, Profile, PArray
+    export RevJumpChain, IRRevJumpPrior, BMRevJumpPrior, PostPredSim
+    export addwgd!, removewgd!, addwgds!, removewgds!, setrates!, getrates
+    export logpdf, logpdf!, gradient, asvector, treelength
+    export init!, mcmc!, rjmcmc!, wgdtrace, bayesfactors
+    export posteriorΣ!, posteriorE!, pppvalues
 end

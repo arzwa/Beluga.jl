@@ -8,13 +8,13 @@ using Plots, StatsPlots
 begin
     nw = open("test/data/dicots/plants2.nw", "r") do f ; readline(f); end
     d, p = DLWGD(nw, 1., 1., 0.9)
-    prior = IidRevJumpPrior(
+    prior = IRRevJumpPrior(
         Σ₀=[1 0.0 ; 0.0 1],
         X₀=MvNormal(log.([3,3]), [0.2 0.; 0. 0.2]),
         πK=DiscreteUniform(0, 10),
         πq=Beta(1,1),  # I have issues when not uniform (why?)
         πη=Beta(3,1),
-        Tl=treelength(d),
+        Tl=Beluga.treelength(d),
         πE=Normal(1, 0.1))
     # kernel = Beluga.SimpleKernel(qkernel=Beta(1,1))
     # kernel = Beluga.DropKernel(qkernel=Beta(1,5))

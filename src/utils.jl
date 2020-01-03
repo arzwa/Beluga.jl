@@ -1,12 +1,10 @@
 # Utilities
-# =========
 minfs(::Type{T}, dims::Tuple{}) where T<:Real = Array{T}(fill(-Inf, dims))
 minfs(::Type{T}, dims::Union{Integer, AbstractUnitRange}...) where T<:Real =
     Array{T}(fill(-Inf, dims))
 
 
 # BDP utilities
-# =============
 getϕ(t, λ, μ) = λ ≈ μ ? λ*t/(1. + λ*t) : μ*(exp(t*(λ-μ))-1.)/(λ*exp(t*(λ-μ))-μ)
 getψ(t, λ, μ) = λ ≈ μ ? λ*t/(1. + λ*t) : (λ/μ)*getϕ(t, λ, μ)
 getξ(i, j, k, t, λ, μ) = binomial(i, k)*binomial(i+j-k-1,i-1)*
@@ -26,7 +24,6 @@ geometric_extinctionp(ϵ::T, η::T) where T<:Real = η + ϵ -log1mexp(log1mexp(�
 
 
 # Tree utilities
-# ==============
 # get distance from n to m, where it is guaranteed that m is above n
 function parentdist(n::ModelNode{T}, m::ModelNode{T}) where T<:Real
     d = zero(T)
@@ -44,8 +41,8 @@ id(node::ModelNode, s::Symbol) = Symbol("$s$(node.i)")
 
 clade(m, n) = [m.leaves[x.i] for x in postwalk(n) if haskey(m.leaves, n.i)]
 
+
 # Trace utilities
-# ===============
 function freqmap(x)
     c = countmap(x)
     !haskey(c, 0) ? c[0] = 0 : nothing

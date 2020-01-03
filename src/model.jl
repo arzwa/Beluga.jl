@@ -1,12 +1,15 @@
-# Model ________________________________________________________________________
 abstract type PhyloBDPModel{T} end
 
+"""
+    DLWGD{T<:Real,V<:ModelNode{T}}
+
+Duplication, loss and WGD model. This holds a dictionary for easy access of the
+nodes in the probabilistic graphical model and the leaf names.
+"""
 struct DLWGD{T<:Real,V<:ModelNode{T}} <: PhyloBDPModel{T}
     nodes ::Dict{Int64,V}
     leaves::Dict{Int64,Symbol}
 end
-
-const DuplicationLossWGDModel{T} = DLWGD{T}
 
 Base.show(io::IO, d::DLWGD{T,V}) where {T,V} = write(io, "DLWGD{$T,$V}($(length(d)))")
 Base.length(d::DLWGD) = length(d.nodes)
@@ -30,6 +33,8 @@ function DLWGD(nw::String, λ, μ, η, nt::Type=Branch)
     (model=d, data=PArray())
 end
 
+# compute extended phylogenetic profile (i.e. upper bound of number of
+# surviving lineages at internal nodes)
 function profile(t::TreeNode, l::Dict, df::DataFrame)
     nodes = postwalk(t)
     M = zeros(Int64, size(df)[1], length(nodes))
@@ -41,11 +46,22 @@ function profile(t::TreeNode, l::Dict, df::DataFrame)
 end
 
 """
+    set!(d::DLWGD)
+
+Compute all model internals in postorder.
+"""
+function set!(d::DLWGD)
+    for n in postwalk(d[1])
+        set!(n)
+    end
+end
+
+"""
     setrates!(model::DLWGD{T}, X::Matrix{T})
 
 Set duplication and loss rates for each non-wgd node|branch in the model.
-Rates should be provided as a 2 × num_nodes matrix, where the columns
-correspond to model node indices.
+Rates should be provided as a 2 × n matrix, where the columns correspond to
+model node indices.
 """
 function setrates!(model::DLWGD{T}, X::Matrix{T}) where T
     for (i, n) in sort(model.nodes)
@@ -56,6 +72,11 @@ function setrates!(model::DLWGD{T}, X::Matrix{T}) where T
     set!(model)
 end
 
+"""
+    getrates(model::DLWGD{T})
+
+Get the duplication and loss rate matrix (2 × n).
+"""
 function getrates(model::DLWGD{T}) where T
     X = zeros(T, 2,ne(model)+1)
     for (i, n) in sort(model.nodes)
@@ -75,31 +96,31 @@ function getqs(model::DLWGD{T}) where T
 end
 
 """
-    insertwgd!(d::DLWGD, n::ModelNode, t, q)
+    addwgd!(d::DLWGD, n::ModelNode, t, q)
 
 Insert a WGD node with retention rate `q` at distance `t` above node `n`.
 """
-function insertwgd!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
+function addwgd!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
     @assert !isroot(n) "Cannot add WGD above root node"
     @assert n[:t] - t > 0. "Invalid WGD time $(n[:t]) - $t < 0."
     parent = n.p
     i = maximum(keys(d.nodes))+1
     w = wgdnode(i, parent, q, n[:t] - t)
     a = wgdafternode(i+1, w)
-    insertwgd!(d, n, w, a)
+    addwgd!(d, n, w, a)
 end
 
-function insertwgt!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
+function addwgt!(d::DLWGD{T}, n::ModelNode{T}, t::T, q::T) where T<:Real
     @assert !isroot(n) "Cannot add WGT above root node"
     @assert n[:t] - t > 0. "Invalid WGT time $(n[:t]) - $t < 0."
     parent = n.p
     i = maximum(keys(d.nodes))+1
     w = wgtnode(i, parent, q, n[:t] - t)
     a = wgdafternode(i+1, w)
-    insertwgd!(d, n, w, a)
+    addwgd!(d, n, w, a)
 end
 
-function insertwgd!(d::DLWGD{T}, n::N, w::N, a::N) where {T,N<:ModelNode{T}}
+function addwgd!(d::DLWGD{T}, n::N, w::N, a::N) where {T,N<:ModelNode{T}}
     # NOTE: assumes `w` and `a` have their parents already but not children
     n.p.c = setdiff(n.p.c, Set([n])) # remove n from its parent's children
     push!(n.p, w)
@@ -113,6 +134,24 @@ function insertwgd!(d::DLWGD{T}, n::N, w::N, a::N) where {T,N<:ModelNode{T}}
     return w
 end
 
+addwgds!(model::DLWGD, wgds::String) =
+    addwgds!(model, eval(Meta.parse(wgds)))
+
+function addwgds!(model::DLWGD, wgds::Dict)
+    for (k,v) in wgds
+        for wgd in v
+            addwgd!(model, closestnode(model[k], wgd[1])..., wgd[2])
+        end
+    end
+end
+
+"""
+    removewgd!(d::DLWGD, n::ModelNode, reindex::Bool=true, set::Bool=true)
+
+Remove WGD/T node `n` from the DLWGD model. If `reindex` is true, the model
+nodes are reindexed to be consecutive. If `set` is true, the model internals
+(transition and extinction probabilities) are recomputed.
+"""
 function removewgd!(d::DLWGD, n::ModelNode, reindex::Bool=true, set::Bool=true)
     @assert iswgm(n) "Not a WGD/T node $i"
     @assert haskey(d.nodes, n.i) "Node not in model!"
@@ -140,22 +179,16 @@ function reindex!(d::DLWGD, i::Int64)
     end
 end
 
+"""
+    removewgds(d::DLWGD)
+
+Remove all WGD nodes from the model.
+"""
 function removewgds!(model::DLWGD)
     for i in getwgds(model)
         removewgd!(model, model[i], true, false)
     end
     set!(model)
-end
-
-insertwgds!(model::DLWGD, wgds::String) =
-    insertwgds!(model, eval(Meta.parse(wgds)))
-
-function insertwgds!(model::DLWGD, wgds::Dict)
-    for (k,v) in wgds
-        for wgd in v
-            insertwgd!(model, closestnode(model[k], wgd[1])..., wgd[2])
-        end
-    end
 end
 
 function randpos(model::DLWGD)
@@ -165,7 +198,7 @@ function randpos(model::DLWGD)
         v[i] = n[:t]
     end
     i = sample(1:l, Weights(v))
-    t = rand(Uniform(0., model[i][:t]))
+    t = rand()*model[i][:t]
     model[i], t
 end
 
@@ -198,12 +231,6 @@ function initmodel(t::TreeNode, l::Dict,
     end
     walk(t, nothing)
     return d, n
-end
-
-function set!(d::DLWGD)
-    for n in postwalk(d[1])
-        set!(n)
-    end
 end
 
 function branchrates(d::DLWGD)
@@ -242,6 +269,12 @@ function setparams!(d::DLWGD, row::DataFrameRow)
     end
 end
 
+"""
+    (m::DLWGD)(row::DataFrameRow)
+
+Instantiate a model based on a row from a trace data frame. This returns a
+modified copy of the input model.
+"""
 function (m::DLWGD)(row::DataFrameRow)
     model = deepcopy(m)
     removewgds!(model)
@@ -251,6 +284,14 @@ function (m::DLWGD)(row::DataFrameRow)
     model
 end
 
+# gives isues with Documenter https://github.com/JuliaDocs/Documenter.jl/issues/1192
+# """
+#     (model::DLWGD{T,V})(θ::Vector{Y})
+#
+# Instantiate a model from a vector representation of the model parameterization.
+# This returns a modified copy of the input model. θ is expected to have the
+# structure [λ1, …, λn, μ1, …, μn, q1, …, qk, η].
+# """
 function (model::DLWGD{T,V})(θ::Vector{Y}) where {T<:Real,V<:ModelNode{T},Y<:Real}
     n = ne(model)+1
     m = size(model[1].x.W)[1]
@@ -287,8 +328,12 @@ function (model::DLWGD{T,V})(θ::Vector{Y}) where {T<:Real,V<:ModelNode{T},Y<:Re
     newmodel
 end
 
+"""
+    logpdf(d::DLWGD, x::Vector{Int64})
 
-# Log-likelihood computation ___________________________________________________
+Compute the log likelihood under the DLWGD model for a single count vector `x`
+ℓ(λ,μ,q,η|x).
+"""
 function logpdf(d::DLWGD, x::Vector{Int64})
     L = csuros_miklos(d[1], x)
     l = integrate_root(L[:,1], d[1])
@@ -296,6 +341,12 @@ function logpdf(d::DLWGD, x::Vector{Int64})
     isfinite(l) ? l : -Inf
 end
 
+"""
+    logpdf!(L::Matrix, d::DLWGD, x::Vector{Int64})
+
+Compute the log likelihood under the DLWGD model for a single count vector `x`
+ℓ(λ,μ,q,η|x) and update the dynamic programming matrix (`L`).
+"""
 function logpdf!(L::Matrix{T}, d::DLWGD{T}, x::Vector{Int64}) where T<:Real
     for n in postwalk(d[1])
         csuros_miklos!(L, n, x)
@@ -305,7 +356,13 @@ function logpdf!(L::Matrix{T}, d::DLWGD{T}, x::Vector{Int64}) where T<:Real
     isfinite(l) ? l : -Inf
 end
 
-# recompute from `n` upward
+"""
+    logpdf!(L::Matrix, n::ModelNode, x::Vector{Int64})
+
+Compute the log likelihood under the DLWGD model for a single count vector `x`
+ℓ(λ,μ,q,η|x) and update the dynamic programming matrix (`L`), only recomputing
+the matrix above node `n`.
+"""
 function logpdf!(L::Matrix{T}, n::ModelNode{T}, x::Vector{Int64}) where T<:Real
     while !isroot(n)
         csuros_miklos!(L, n, x)
@@ -437,6 +494,16 @@ end
 # gradient, seems to only work in NaN safe mode http://www.juliadiff.org/
 # ForwardDiff.jl/stable/user/advanced/#Fixing-NaN/Inf-Issues-1
 # speed previous implementation, plants2.nw, maximum entry 19 = 1.6 ms
+"""
+    gradient(d::DLWGD, x::Vector)
+
+Compute the gradient of the log likelihood under the DLWGD model for a single
+count vector `x`, ∇ℓ(λ,μ,q,η|x).
+
+!!! warning
+    Currently the gradient seems to only work in NaN safe mode [github
+    issue](http://www.juliadiff.org/ForwardDiff.jl/stable/user/advanced/#Fixing-NaN/Inf-Issues-1)
+"""
 function gradient(d::DLWGD{T}, x::Vector{Int64}) where T<:Real
     v = asvector(d)
     f = (u) -> logpdf(d(u), x)
@@ -444,6 +511,12 @@ function gradient(d::DLWGD{T}, x::Vector{Int64}) where T<:Real
     return g::Vector{Float64}
 end
 
+"""
+    asvector(d::DLWGD)
+
+Get a paraeter vector for the DLWGD model, structured as [λ1, …, λn, μ1, …, μn,
+q1, …, qk, η].
+"""
 function asvector(d::DLWGD)
     r = getrates(d)
     q = getqs(d)

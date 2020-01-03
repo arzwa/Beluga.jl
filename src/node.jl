@@ -1,22 +1,20 @@
-# NOTE:
-# * should evaluate numerical accurracy in some way
-# * would prefer to have more tests
-
-# @time set!(d)
-#   0.000061 seconds (47 allocations: 4.188 KiB)
-# type union in ModelNode does not cause drop in efficiency
-# should perhaps develop a type hierarchy to replace the union, but small type
-# unions are no real issue https://julialang.org/blog/2018/08/union-splitting
-
 # Node/ModelNode
-# ====================
-# we have branch models and node models
+# NOTE: We have branch models and node models. In branch models, rates are
+# defined for branches directly, whereas in node models rates are defined for
+# nodes, and branch-rates are computed as the arithmetic or geometric mean of the
+# two flanking nodes. The BDPs along each branch are always defined based on the
+# branch rates.
+# NOTE: I have experimented with a type tree instead of the 'kind' field, so
+# where I have a different type for each kind of node, each a subtype of some
+# abstract DLWGD node. However I failed to obtain good performance.
+
+# node rates (for BM prior etc.)
 @with_kw mutable struct Node{T}
     θ::Dict{Symbol,T}          # parameter vector (λ, μ, q, η, [κ])
     ϵ::Vector{T} = ones(T, 2)  # extinction probabilities
     W::Matrix{T}               # transition probability matrix
-    kind::Symbol               # fake node type, for manual dispatch
-    # NOTE: potential efficiency increase, ue vector instead of Dict for θ
+    kind::Symbol               # fake node type, for 'manual' dispatch
+    # NOTE: potential efficiency increase, use vector instead of Dict for θ
 end
 
 # branch instead of node rates
@@ -24,14 +22,19 @@ end
     θ::Dict{Symbol,T}          # parameter vector (λ, μ, q, η, [κ])
     ϵ::Vector{T} = ones(T, 2)  # extinction probabilities
     W::Matrix{T}               # transition probability matrix
-    kind::Symbol               # fake node type, for manual dispatch
+    kind::Symbol               # fake node type, for 'manual' dispatch
 end
 
 const ModelNode{T} = Union{TreeNode{Node{T}},TreeNode{Branch{T}}} where T
 nodetype(n::TreeNode{Node{T}}) where T = Node
 nodetype(n::TreeNode{Branch{T}}) where T = Branch
 
-# Different node kinds (maybe we could use traits?)
+Base.setindex!(n::ModelNode{T}, v::T, s::Symbol) where T = n.x.θ[s] = v
+Base.getindex(n::ModelNode, s::Symbol) = n.x.θ[s]
+Base.getindex(n::ModelNode, args::Symbol...) = [n.x.θ[s] for s in args]
+Base.eltype(n::TreeNode{T}) where T = T
+
+# Different node kinds
 rootnode(η::T, λ::T, μ::T, m::Int64, nt::Type) where T<:Real =
     TreeNode(1, nt{T}(
         θ=Dict(:t=>0.,:λ=>λ,:μ=>μ,:η=>η),
@@ -62,47 +65,23 @@ wgdafternode(i::Int64, p::V) where {T<:Real,V<:ModelNode{T}} =
         W=zeros(size(p.x.W)),
         kind=:wgdafter), p)
 
-Base.setindex!(n::ModelNode{T}, v::T, s::Symbol) where T = n.x.θ[s] = v
-Base.getindex(n::ModelNode, s::Symbol) = n.x.θ[s]
-Base.getindex(n::ModelNode, args::Symbol...) = [n.x.θ[s] for s in args]
-Base.eltype(n::TreeNode{T}) where T = T
-
 iswgd(n::ModelNode) = n.x.kind == :wgd
 iswgt(n::ModelNode) = n.x.kind == :wgt
 iswgm(n::ModelNode) = iswgd(n) || iswgt(n)
-iswgdafter(n::ModelNode) = n.x.kind == :wgdafter
-iswgtafter(n::ModelNode) = !(isnothing(n.p)) && n.p.x.kind == :wgt
+iswgdafter(n::ModelNode) = n.x.kind == :wgdafter && n.p.x.kind == :wgd
+iswgtafter(n::ModelNode) = n.x.kind == :wgdafter && n.p.x.kind == :wgt
 isawgd(n::ModelNode) = iswgd(n) || iswgdafter(n) || iswgt(n) || iswgtafter(n)
 issp(n::ModelNode) = n.x.kind == :sp
 gete(n::ModelNode, i::Int64) = n.x.ϵ[i]
 getw(n::ModelNode, i::Int64, j::Int64) = n.x.W[i,j]
 
-function update!(n::TreeNode{Node{T}}) where T
-    setbelow!(n)
-    setabove!(n)
-end
-
-update!(n::TreeNode{Branch{T}}) where T = setabove!(n)
-
-function update!(n::ModelNode{T}, θ::Symbol, v::T) where T
-    n[θ] = v
-    update!(n)
-end
-
-function update!(n::ModelNode, θ::NamedTuple)
-    for (k, v) in pairs(θ)
-        n[k] = v
-    end
-    update!(n)
-end
-
 function nonwgdparent(n::ModelNode)
-    # assumes n is a wgdnode, returns n if not a wgd node
+    # NOTE assumes n is a wgdnode, returns n if not a wgd node
     while isawgd(n) ; n = n.p ; end; n
 end
 
 function nonwgdchild(n::ModelNode)
-    # assumes n is a wgdnode, returns n if not a wgd node
+    # NOTE assumes n is a wgdnode, returns n if not a wgd node
     while isawgd(n); n = first(n.c); end; n
 end
 
@@ -114,6 +93,25 @@ function closestnode(n::ModelNode{T}, t::T) where T
         t_ -= n[:t]
     end
     n, t
+end
+
+update!(n::TreeNode{Branch{T}}) where T = setabove!(n)
+
+function update!(n::TreeNode{Node{T}}) where T
+    setbelow!(n)
+    setabove!(n)
+end
+
+function update!(n::ModelNode{T}, θ::Symbol, v::T) where T
+    n[θ] = v
+    update!(n)
+end
+
+function update!(n::ModelNode, θ::NamedTuple)
+    for (k, v) in pairs(θ)
+        n[k] = v
+    end
+    update!(n)
 end
 
 function set!(n::ModelNode)

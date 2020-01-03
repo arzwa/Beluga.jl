@@ -1,6 +1,15 @@
 # Beluga
 
-(name is still WIP, I'm not that convinced)
+## Dependencies
+
+Beluga requires several unregistered dependencies, to install
+Beluga, fire up a Jjulia session, hit `]` and add the following:
+
+```
+(v1.3) pkg> add https://github.com/arzwa/PhyloTree.jl
+(v1.3) pkg> add https://github.com/arzwa/AdaptiveMCMC.jl
+(v1.3) pkg> add https://github.com/arzwa/Beluga.jl
+```
 
 ## Usage
 
@@ -42,7 +51,7 @@ l = logpdf!(model[5], profile)
 g = gradient(model, profile)
 
 # add a WGD node above node 6 at a distance 0.1 with q=0.25
-insertwgd!(model, model[6], 0.1, 0.25)
+addwgd!(model, model[6], 0.1, 0.25)
 extend!(profile, 6);
 
 # compute the log-likelihood, now for the model with the WGD
@@ -55,7 +64,7 @@ rand(model)
 rand(model, 100)
 
 # independent rates prior (check & adapt default settings!)
-prior = IidRevJumpPrior()
+prior = IRRevJumpPrior()
 logpdf(prior, model)
 
 # sample random model from prior

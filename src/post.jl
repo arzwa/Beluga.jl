@@ -1,4 +1,10 @@
-# MCMCChains interface, diagnostics etc.
+"""
+    Chains(chain::RevJumpChain, burnin)
+
+Obtain and MCMCChains object, with summary and diagnostic statistics.
+"""
+MCMCChains.Chains(c::RevJumpChain, burnin=1000) = Chains(c.trace, burnin)
+
 function MCMCChains.Chains(trace::DataFrame, burnin=1000)
     df = select(trace, Not([:wgds]))
     for col in names(df)
@@ -9,23 +15,15 @@ function MCMCChains.Chains(trace::DataFrame, burnin=1000)
     return Chains(X, [string(x) for x in names(df)][2:end])
 end
 
-# get an MCMCChains chain (gives diagnostics etc.)
 """
-    Chains(chain::RevJumpChain, burnin)
-
-Obtain and MCMCChains object, with summary and diagnostic statistics.
-"""
-MCMCChains.Chains(c::RevJumpChain, burnin=1000) = Chains(c.trace, burnin)
-
-"""
-    get_wgdtrace(chain)
+    getwgdtrace(chain)
 
 Summarize all WGD models from an rjMCMC trace. This provdes the data to
 evaluate retention rates for WGD models etc. Returns a dict of dicts with
-data frames (I know, horrible data structure) which is structured as
+data frames (which is a horrible data structure, I know) structured as
 (branch_1 => (1 WGD => trace, 2 WGDs => trace, ...), branch_2 => (), ...).
 """
-function get_wgdtrace(chain::RevJumpChain)
+function getwgdtrace(chain::RevJumpChain)
     tr = Dict{Int64,Dict{Int64,DataFrame}}()
     for (gen, d) in enumerate(chain.trace[!,:wgds])
         for (k,v) in d
@@ -48,17 +46,22 @@ function get_wgdtrace(chain::RevJumpChain)
     tr
 end
 
+"""
+    bayesfactors(trace::DataFrame, model::DLWGD, p::Float64)
 
-# Bayes factors
-# =============
-# Prior probabilities for # of WGDs on each branch
-function kbranch_prior(k, t, T, prior::UpperBoundedGeometric)
-    kmax = prior.b
-    f = t/T
-    sum([binomial(i, k)*f^k*(1. - f)^(i-k)*pdf(prior, i) for i=k:kmax])
+Compute Bayes Factors for all branch WGD configurations. Returns a data frame
+that is more or less self-explanatory.
+"""
+function bayesfactors(chain; burnin::Int64=1000)
+    @unpack trace, model, prior = chain
+    trace_ = trace[burnin+1:end,:]
+    df = bayesfactors(trace_, model, prior.πK)
+    show_bayesfactors(df)
+    df
 end
 
-function kbranch_prior(k, t, T, prior::DiscreteUniform)
+# Prior probabilities for # of WGDs on each branch
+function kbranch_prior(k, t, T, prior::Union{UpperBoundedGeometric,DiscreteUniform})
     kmax = prior.b
     f = t/T
     sum([binomial(i, k)*f^k*(1. - f)^(i-k)*pdf(prior, i) for i=k:kmax])
@@ -73,21 +76,10 @@ function kbranch_prior(k, t, T, prior::Geometric)
     p * (a*q)^k * (1. - b*q)^(-k-1)
 end
 
-function branch_bayesfactors(chain, burnin::Int64=1000)
-    @unpack trace, model, prior = chain
-    trace_ = trace[burnin+1:end,:]
-    df = branch_bayesfactors(trace_, model, prior.πK)
-    show_bayesfactors(df)
-    df
-end
+# closed form under Poisson prior
+kbranch_prior(k, t, T, prior::Poisson) = pdf(Poisson(prior.λ*t/T), k)
 
-"""
-    branch_bayesfactors(trace::DataFrame, model::DLWGD, p::Float64)
-
-Compute Bayes Factors for all branch WGD configurations. Returns a data frame
-that is more or less self-explanatory.
-"""
-function branch_bayesfactors(trace::DataFrame, model::DLWGD, p)
+function bayesfactors(trace::DataFrame, model::DLWGD, p)
     T = treelength(model)
     df = DataFrame()
     for (i,n) in sort(model.nodes)
@@ -123,6 +115,7 @@ end
 
 cumsum0(x) = 1 .- vcat(0., cumsum(x)...)[1:end-1]
 
+# 'pretty' printing of Bayes factor computations
 function show_bayesfactors(df::DataFrame)
     for d in groupby(df, :branch)
         @printf "🌲 %2d: " d[1,:branch]
@@ -144,8 +137,15 @@ function show_bayesfactors(df::DataFrame)
     end
 end
 
-# posterior expectations
-function posterior_E!(chain)
+"""
+    posteriorE!(chain)
+
+Compute E[Xi|Xparent=1,λ,μ] for the joint posterior; i.e. the expected number
+of lineages at node i under the linear birth-death process given that there was
+one lineage at the parent of i, for each sample from the posterior. This can
+give an idea of gene family expansion/contraction.
+"""
+function posteriorE!(chain)
     @unpack trace, model = chain
     for i=2:ne(model)+1
         t = parentdist(model[i], nonwgdparent(model[i].p))
@@ -158,8 +158,13 @@ function posterior_E!(chain)
     end
 end
 
-# see Lartillot & Poujol 2010
-function posterior_Σ!(chain)
+"""
+    posteriorΣ!(chain)
+
+Sample the covariance matrix of the bivariate process *post hoc* from the
+posterior under the Inverse Wishart prior. Based on Lartillot & Poujol 2010.
+"""
+function posteriorΣ!(chain)
     @unpack model, prior = chain
     @unpack Σ₀ = prior
     chain.trace[!,:varλ] .= NaN
@@ -175,12 +180,37 @@ function posterior_Σ!(chain)
     end
 end
 
+"""
+    PostPredSim(chain, data::DataFrame, n::Int64)
 
-# posterior predictive checks/simulations/tests
-# =============================================
+Perform posterior predictive simulations.
+"""
 mutable struct PostPredSim
     datastats::DataFrame
     ppstats  ::DataFrame
+end
+
+"""
+    pppvalues(pps::PostPredSim)
+
+Compute posterior predictive p-values based on the posterior predictive
+distribution and the observed sumary statistics (see e.g. Gelman et al. 2013).
+"""
+function pppvalues(pps::PostPredSim)
+    @unpack datastats, ppstats = pps
+    nrep = size(ppstats)[1]
+    d = Dict{Symbol,Float64}()
+    for n in names(ppstats)
+        x = datastats[1,n]
+        p = length(ppstats[ppstats[!,n] .> x,n])/nrep
+        d[n] = p > 0.5 ? 1. - p : p
+    end
+    df = stack(DataFrame(d))
+    df[!,:eval] .= ""
+    df[df[!,:value] .< 0.05 ,:eval] .= "*"
+    df[df[!,:value] .< 0.01 ,:eval] .= "**"
+    df[df[!,:value] .< 0.001,:eval] .= "***"
+    df
 end
 
 PostPredSim(chain::RevJumpChain, data, n; kwargs...) =
@@ -226,21 +256,4 @@ function flatten(df::DataFrame, on::Symbol)
         end
     end
     DataFrame(d)
-end
-
-function pp_pvalues(pps::PostPredSim)
-    @unpack datastats, ppstats = pps
-    nrep = size(ppstats)[1]
-    d = Dict{Symbol,Float64}()
-    for n in names(ppstats)
-        x = datastats[1,n]
-        p = length(ppstats[ppstats[!,n] .> x,n])/nrep
-        d[n] = p > 0.5 ? 1. - p : p
-    end
-    df = stack(DataFrame(d))
-    df[!,:eval] .= ""
-    df[df[!,:value] .< 0.05 ,:eval] .= "*"
-    df[df[!,:value] .< 0.01 ,:eval] .= "**"
-    df[df[!,:value] .< 0.001,:eval] .= "***"
-    df
 end

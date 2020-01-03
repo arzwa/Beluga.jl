@@ -1,6 +1,7 @@
 # Main model tests
 # ================
-import Beluga: csuros_miklos, csuros_miklos!, minfs, update!
+import Beluga: csuros_miklos, csuros_miklos!, minfs, update!, Node, Branch
+import Beluga: extend!, shrink!
 
 
 @testset "DL model, Csuros & Miklos algorithm" begin
@@ -16,7 +17,7 @@ end
     d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5, Node)
     x = p[1].x
     n = d[3]
-    insertwgd!(d, n, 2., 0.5)
+    addwgd!(d, n, 2., 0.5)
     x_ = [x ; [x[n.i], x[n.i]]]
     L = csuros_miklos(d[1], x_)
     for i=1:length(L[:,1])
@@ -35,7 +36,7 @@ end
     end
 
     n = d[3]
-    wgdnode = insertwgd!(d, n, 2., 0.5)
+    wgdnode = addwgd!(d, n, 2., 0.5)
     x_ = [x ; [x[n.i], x[n.i]]]
     L = [L minfs(eltype(L), size(L)[1], 2)]
     logpdf!(L, n, x_)
@@ -93,9 +94,9 @@ end
 
 @testset "Insert and remove WGDs" begin
     d, p = DLWGD(s1, df1, 0.2, 0.3, 1/1.5, Node)
-    insertwgd!(d, d[3], 2., 0.2)
-    insertwgd!(d, d[3], 1., 0.3)
-    insertwgd!(d, d[2], 1., 0.4)
+    addwgd!(d, d[3], 2., 0.2)
+    addwgd!(d, d[3], 1., 0.3)
+    addwgd!(d, d[2], 1., 0.4)
     removewgd!(d, d[8])
     @test d[8][:q] == 0.3
     @test d[10][:q] == 0.4
@@ -154,7 +155,7 @@ end
             u = rand()
             if length(r) > 0 && u < 0.5
                 j = pop!(r)
-                w = insertwgd!(d, d[j], rand()*d[j][:t], rand())
+                w = addwgd!(d, d[j], rand()*d[j][:t], rand())
                 extend!(p, j)
                 logpdf!(d[j], p)
                 push!(wnodes, w)

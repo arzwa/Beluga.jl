@@ -28,10 +28,17 @@ begin
     model, data = DLWGD(nw, 1., 1., 0.9, Branch)
 end
 
+begin
+    trace = CSV.read(joinpath(base, "data/12dicots/irmcmc_2231006/trace.csv"))
+    treefile = joinpath(base, "data/12dicots/12dicots.nw")
+    nw = open(treefile, "r") do f ; readline(f); end
+    model, data = DLWGD(nw, 1., 1., 0.9, Branch)
+end
+
 
 begin
     w, h = 500, 30*(length(model.leaves))
-    d = Drawing(w, h, :svg, "$base/img/dicots-doubletree.svg");
+    d = Drawing(w, h, :svg, "$base/img/12dicots-doubletree.svg");
     sethue("black")
     setline(3)
     origin()

@@ -1,4 +1,3 @@
-
 # simulate data from a DLWGD instance
 Base.rand(d::DLWGD) = DataFrame(sort(profile(simulate(d), d)))
 Base.rand(d::DLWGD, N::Int64) = vcat([rand(d) for i=1:N]...)
@@ -14,9 +13,6 @@ function Base.rand(d::DLWGD, N::Int64, condition::Array{Array{T,1},1}) where T
     vcat(dfs...)
 end
 
-
-# Simulation
-# ==========
 @with_kw mutable struct GeneTreeNode
     t::Float64 = 0.
     σ::Int64 = 1

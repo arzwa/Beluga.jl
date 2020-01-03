@@ -15,7 +15,7 @@ function randmodel(m, prior::CoevolRevJumpPrior)
     wgds = Dict()
     for i=1:k
         n, t = Beluga.randpos(model)
-        wgdnode = insertwgd!(model, n, t, 0.5)
+        wgdnode = addwgd!(model, n, t, 0.5)
         child = nonwgdchild(wgdnode)
         wgds[wgdnode.i] = (n.i, t)
     end
@@ -34,7 +34,7 @@ function randmodel(m, prior::IidRevJumpPrior)
     wgds = Dict()
     for i=1:k
         n, t = Beluga.randpos(model)
-        wgdnode = insertwgd!(model, n, t, rand(prior.πq))
+        wgdnode = addwgd!(model, n, t, rand(prior.πq))
         child = nonwgdchild(wgdnode)
         wgds[wgdnode.i] = (n.i, t)
     end
@@ -59,7 +59,7 @@ function inference(nw, df, wgds, prior, n=6000, nt=BelugaBranch)
     data = Profile(y)
     chain = RevJumpChain(data=data, model=deepcopy(model), prior=prior)
     for (i, wgd) in sort(wgds)
-        wgdnode = insertwgd!(chain.model, chain.model[wgd[1]], wgd[2], rand())
+        wgdnode = addwgd!(chain.model, chain.model[wgd[1]], wgd[2], rand())
         extend!(chain.data, wgd[1])
     end
     init!(chain)

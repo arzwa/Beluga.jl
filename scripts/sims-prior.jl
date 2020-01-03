@@ -40,7 +40,7 @@ function addrandwgds!(model, πk, πq)
     for i=1:k
         n, t = Beluga.randpos(model)
         q = rand(πq)
-        wgdnode = insertwgd!(model, n, t, q)
+        wgdnode = addwgd!(model, n, t, q)
         child = Beluga.nonwgdchild(wgdnode)
         wgds[wgdnode.i] = (child.i, q)
     end
