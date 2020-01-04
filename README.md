@@ -1,3 +1,7 @@
+Copyright (C) 2020 Arthur Zwaenepoel
+
+VIB/UGent center for plant systems biology - [Bioinformatics & evolutionary genomics group](http://bioinformatics.psb.ugent.be/beg/)
+
 # Beluga
 
 ## Dependencies
@@ -16,9 +20,8 @@ session, hit `]` and add the following:
 using Beluga, CSV, DataFrames, Parameters
 
 # get some data
-ddir = "test/data"
-tree = open(joinpath(ddir, "plants1.nw"), "r") do f ; readline(f); end
-df = CSV.read(joinpath(ddir, "plants1-100.tsv"), delim=",")
+tree = readline("example/dicots/dicots.nw")
+df = CSV.read("example/dicots/dicots-f01-25.csv")
 
 # construct model and profile
 λ, μ, η = 1.0, 0.92, 0.66
@@ -59,7 +62,7 @@ logpdf!(model, profile)
 # simulate a random phylogenetic profile under the model
 rand(model)
 
-# simulate an data set of 100 profiles
+# simulate a data set of 100 profiles
 rand(model, 100)
 
 # independent rates prior (check & adapt default settings!)
