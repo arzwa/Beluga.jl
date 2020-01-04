@@ -8,7 +8,6 @@ jobs:
       script:
         - julia --project=docs/ -e 'using Pkg;
             Pkg.add("Documenter");
-            Pkg.add(PackageSpec(url="https://github.com/arzwa/PhyloTree.jl"));
             Pkg.add(PackageSpec(url="https://github.com/arzwa/AdaptiveMCMC.jl"));
             Pkg.develop(PackageSpec(path=pwd()));
             Pkg.instantiate()'
