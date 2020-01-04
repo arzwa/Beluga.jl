@@ -279,7 +279,7 @@ function (m::DLWGD)(row::DataFrameRow)
     model = deepcopy(m)
     removewgds!(model)
     setparams!(model, row)
-    insertwgds!(model, row[:wgds])
+    addwgds!(model, row[:wgds])
     set!(model)
     model
 end

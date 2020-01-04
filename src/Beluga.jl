@@ -1,7 +1,7 @@
 module Beluga
-    using PhyloTree
     using Parameters
     using StatsFuns
+    using DataStructures
     using Distributions
     using DistributedArrays
     using DataFrames
@@ -16,6 +16,7 @@ module Beluga
     import Distributions: logpdf, logpdf!, pdf
     import AdaptiveMCMC: ProposalKernel, DecreaseProposal
 
+    include("tree.jl")
     include("node.jl")
     include("model.jl")
     include("utils.jl")
@@ -25,6 +26,7 @@ module Beluga
     include("sim.jl")
     include("post.jl")
 
+    export readnw
     export DLWGD, Profile, PArray
     export RevJumpChain, IRRevJumpPrior, BMRevJumpPrior, PostPredSim
     export addwgd!, removewgd!, addwgds!, removewgds!, setrates!, getrates

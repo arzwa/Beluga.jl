@@ -88,7 +88,7 @@ Reversible jump chain struct for DLWGD model inference.
     props ::Proposals    = Proposals()
     state ::State        = State(:gen=>0, :logp=>NaN, :logπ=>NaN, :k=>0)
     trace ::DataFrame    = DataFrame()
-    kernel::K            = SimpleKernel()
+    kernel::K            = BranchKernel()
 end
 
 Base.rand(df::DataFrame) = df[rand(1:size(df)[1]),:]

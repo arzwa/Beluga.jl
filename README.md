@@ -2,11 +2,10 @@
 
 ## Dependencies
 
-Beluga requires several unregistered dependencies, to install
-Beluga, fire up a Jjulia session, hit `]` and add the following:
+Beluga requires unregistered dependencies, to install Beluga, fire up a julia
+session, hit `]` and add the following:
 
 ```
-(v1.3) pkg> add https://github.com/arzwa/PhyloTree.jl
 (v1.3) pkg> add https://github.com/arzwa/AdaptiveMCMC.jl
 (v1.3) pkg> add https://github.com/arzwa/Beluga.jl
 ```
@@ -91,3 +90,10 @@ following should work for most people:
 ```
 sed -i 's/NANSAFE_MODE_ENABLED = false/NANSAFE_MODE_ENABLED = true/g' ~/.julia/packages/ForwardDiff/*/src/prelude.jl
 ```
+
+## Citation
+
+Beluga.jl is developed by Arthur Zwaenepoel at the VIB/UGent center for plant
+systems biology (bioinformatics and evolutionary genomics group). A paper is
+in preparation, if you use the code in this package in the mean time, please
+cite this github repository.
