@@ -8,7 +8,7 @@ makedocs(
     clean    = true
 )
 
-# deploydocs(
-#     repo = "github.com/arzwa/Beluga.jl.git",
-#     target = "build",
-# )
+deploydocs(
+    repo = "github.com/arzwa/Beluga.jl.git",
+    target = "build",
+)
