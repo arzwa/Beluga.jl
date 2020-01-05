@@ -1,3 +1,6 @@
+[![](https://img.shields.io/badge/docs-stable-blue.svg)](https://arzwa.github.io/Beluga.jl/stable)
+[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://arzwa.github.io/Beluga.jl/dev)
+
 Copyright (C) 2020 Arthur Zwaenepoel
 
 VIB/UGent center for plant systems biology - [Bioinformatics & evolutionary genomics group](http://bioinformatics.psb.ugent.be/beg/)
