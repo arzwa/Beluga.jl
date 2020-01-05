@@ -9,14 +9,6 @@ Zwaenepoel & Van de Peer (2019) as well as the reversible-jump MCMC sampler of
 Zwaenepoel & Van de Peer (2020, *in preparation*).
 
 
-## Installation
-
-```julia-repl
-(v1.3) pkg> add https://github.com/arzwa/PhyloTree.jl
-(v1.3) pkg> add https://github.com/arzwa/AdaptiveMCMC.jl
-(v1.3) pkg> add https://github.com/arzwa/Beluga.jl
-```
-
 ## Data preparation
 
 To perform analyses with Beluga, you will need  

@@ -1,4 +1,6 @@
 [deps]
+AdaptiveMCMC = "7599756a-d2e4-11e9-0d0e-31645f1f853c"
+Beluga = "54089656-9653-11e9-3cd0-3b3de27a7aaa"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 
 [compat]
