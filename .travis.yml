@@ -12,6 +12,7 @@ jobs:
             Pkg.develop(PackageSpec(path=pwd()));
             Pkg.instantiate()'
         - julia --project=docs/ docs/make.jl
+      after_success: skip
     - stage: test
       os: linux
       julia: 1.3
@@ -20,4 +21,4 @@ jobs:
             Pkg.add(PackageSpec(url="https://github.com/arzwa/AdaptiveMCMC.jl"));
             Pkg.develop(PackageSpec(path=pwd()));
             Pkg.test("Beluga");'
-after_success: skip
+      after_success: skip
