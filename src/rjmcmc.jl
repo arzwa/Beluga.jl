@@ -116,7 +116,7 @@ function setstate!(state, model)
         state[Symbol("k$i")] = 0
     end
     for (i, n) in model.nodes
-        if iswgd(n)
+        if iswgm(n)
             K += 1
             b = Symbol("k$(nonwgdchild(n).i)")
             state[b] += 1
@@ -130,9 +130,9 @@ end
 
 function setprops!(props, model)
     for (i, n) in model.nodes
-        if iswgdafter(n)
+        if iswgmafter(n)
             continue
-        elseif iswgd(n)
+        elseif iswgm(n)
             props[i] = [AdaptiveUnitProposal(); WgdProposals()]
         elseif isroot(n)
             props[0] = [AdaptiveUnitProposal()]
@@ -246,9 +246,9 @@ end
 function move!(chain; rootequal::Bool=false)
     @unpack model, prior = chain
     for n in postwalk(model[1])
-        if iswgdafter(n)
+        if iswgmafter(n)
             continue
-        elseif iswgd(n)
+        elseif iswgm(n)
             move_wgdtime!(chain, n)
             move_wgdrates!(chain, n)
         else

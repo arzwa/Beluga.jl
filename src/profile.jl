@@ -118,7 +118,9 @@ and update the profile array.
 function addwgds!(m::DLWGD, p::PArray, config::Array)
     for x in config
         n = lca_node(m, Symbol.(split(x.lca, ","))...)
-        addwgd!(m, n, n[:t]*x.t, x.q)
+        haskey(x, :l) && x.l == 3 ?
+            addwgt!(m, n, n[:t]*x.t, x.q) :
+            addwgd!(m, n, n[:t]*x.t, x.q)
         extend!(p, n.i)
     end
 end

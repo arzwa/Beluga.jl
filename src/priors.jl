@@ -147,9 +147,9 @@ function logpdf(prior::IRRevJumpPrior, d::DLWGD{T}) where T<:Real
     A = zeros(T, M, M)
     X0 = log.(d[1][:λ, :μ])
     for (i, n) in d.nodes
-        if iswgdafter(n)
+        if iswgmafter(n)
             continue
-        elseif iswgd(n)
+        elseif iswgm(n)
             p += logpdf(πq, n[:q]) - log(Tl)
             k += 1
         elseif isroot(n)

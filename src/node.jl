@@ -70,6 +70,7 @@ iswgt(n::ModelNode) = n.x.kind == :wgt
 iswgm(n::ModelNode) = iswgd(n) || iswgt(n)
 iswgdafter(n::ModelNode) = n.x.kind == :wgdafter && n.p.x.kind == :wgd
 iswgtafter(n::ModelNode) = n.x.kind == :wgdafter && n.p.x.kind == :wgt
+iswgmafter(n::ModelNode) = iswgdafter(n) || iswgtafter(n)
 isawgd(n::ModelNode) = iswgd(n) || iswgdafter(n) || iswgt(n) || iswgtafter(n)
 issp(n::ModelNode) = n.x.kind == :sp
 gete(n::ModelNode, i::Int64) = n.x.ϵ[i]
