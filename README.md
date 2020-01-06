@@ -1,4 +1,5 @@
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://arzwa.github.io/Beluga.jl/dev)
+[![](https://travis-ci.com/arzwa/Beluga.jl.svg?branch=master)](https://travis-ci.com/arzwa/Beluga.jl)
 
 Copyright (C) 2020 Arthur Zwaenepoel
 
