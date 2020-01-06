@@ -5,7 +5,7 @@ Random.seed!(143)
     nw = readline("data/plants1c.nw")
     d, p = DLWGD(nw, 1., 1., 0.9)
     prior = IRRevJumpPrior(
-        Σ₀=[1 0.0 ; 0.0 1],
+        Ψ=[1 0.0 ; 0.0 1],
         X₀=MvNormal(log.([3,3]), [0.2 0.; 0. 0.2]),
         πK=DiscreteUniform(0, 10),
         πq=Beta(1,1),

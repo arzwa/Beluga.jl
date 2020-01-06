@@ -1,8 +1,20 @@
-# simulate data from a DLWGD instance
-Base.rand(d::DLWGD) = DataFrame(sort(profile(simulate(d), d)))
-Base.rand(d::DLWGD, N::Int64) = vcat([rand(d) for i=1:N]...)
+"""
+    rand(d::DLWGD, N::Int64 [; condition::Vector{Vector{Symbol}}])
 
-function Base.rand(d::DLWGD, N::Int64, condition::Array{Array{T,1},1}) where T
+Simulate `N` random phylogenetic profiles under the DLWGD model, subject to the
+constraint that there is at least one gene in each clade specified in the
+`condition` array. (by default conditioning is on non-extinction).
+
+Examples:
+
+```julia-repl
+julia> # include completely extinct families
+julia> rand(d, N, condition=[])
+
+julia> # condition on at least one lineage in both clades stemming from the root
+julia> rand(d, N, condition=Beluga.rootclades(d))
+"""
+function Base.rand(d::DLWGD, N::Int64; condition=[clade(d, d[1])])
     dfs = DataFrame[]
     while length(dfs) < N
         df = rand(d)
@@ -12,6 +24,31 @@ function Base.rand(d::DLWGD, N::Int64, condition::Array{Array{T,1},1}) where T
     end
     vcat(dfs...)
 end
+
+# with rate heterogeneity
+function Base.rand(d::DLWGD, N::Int64, Γ::UnivariateDistribution;
+        condition=[clade(d, d[1])])
+    dfs = DataFrame[]
+    v = asvector(d)
+    n = 2*ne(d)+2
+    while length(dfs) < N
+        v_ = [v[1:n] .* rand(Γ) ; v[n+1:end]]
+        df = rand(d(v_))
+        if all([sum(df[1,c]) > 0 for c in condition])
+            push!(dfs, df)
+        end
+    end
+    vcat(dfs...)
+end
+
+"""
+    rand(d::DLWGD)
+
+Simulate a random phylogenetic profile from the DLWGD model.
+"""
+Base.rand(d::DLWGD) = DataFrame(sort(profile(simulate(d), d)))
+
+rootclades(d::DLWGD) = [clade(d, n) for n in d[1].c]
 
 @with_kw mutable struct GeneTreeNode
     t::Float64 = 0.

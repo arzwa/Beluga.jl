@@ -31,6 +31,6 @@ module Beluga
     export RevJumpChain, IRRevJumpPrior, BMRevJumpPrior, PostPredSim
     export addwgd!, removewgd!, addwgds!, removewgds!, setrates!, getrates
     export logpdf, logpdf!, gradient, asvector, treelength
-    export init!, mcmc!, rjmcmc!, wgdtrace, bayesfactors
+    export init!, mcmc!, rjmcmc!, getwgdtrace, bayesfactors
     export posteriorΣ!, posteriorE!, pppvalues
 end

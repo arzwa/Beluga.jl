@@ -166,17 +166,19 @@ posterior under the Inverse Wishart prior. Based on Lartillot & Poujol 2010.
 """
 function posteriorΣ!(chain)
     @unpack model, prior = chain
-    @unpack Σ₀ = prior
+    @unpack Ψ = prior
     chain.trace[!,:varλ] .= NaN
     chain.trace[!,:varμ] .= NaN
     chain.trace[!,:cov]  .= NaN
+    chain.trace[!,:cor]  .= NaN
     for row in eachrow(chain.trace)
         m = model(row)
         @unpack A, q, n = scattermat(m, prior)
-        Σ = rand(InverseWishart(q + n, Σ₀ + A))
+        Σ = rand(InverseWishart(q + n, Ψ + A))
         row[:varλ] = Σ[1,1]
         row[:varμ] = Σ[2,2]
         row[:cov]  = Σ[1,2]
+        row[:cor]  = Σ[1,2]/sqrt(Σ[1,1]*Σ[2,2])
     end
 end
 

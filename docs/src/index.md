@@ -77,7 +77,7 @@ Here is an exaple for the (recommended) independent rates (IR) prior:
 ```@example rjexample
 prior = IRRevJumpPrior(
     # prior covariance matrix (Inverse Wishart prior)
-    Σ₀=[1 0. ; 0. 1],
+    Ψ=[1 0. ; 0. 1],
 
     # multivariate prior on the mean duplication and loss rates
     X₀=MvNormal([0., 0.], [1 0. ; 0. 1]),  

@@ -43,18 +43,18 @@ covariance 2×2 matrix. Crucially, this is defined for the `Node` based model,
 i.e. states at model nodes are assumed to be states at *nodes* of the phylogeny.
 """
 @with_kw struct BMRevJumpPrior{T,U,V,W} <: RevJumpPrior
-    Σ₀::Matrix{Float64}  = [500. 0. ; 0. 500.]
+    Ψ ::Matrix{Float64}  = [500. 0. ; 0. 500.]
     X₀::T                = MvNormal([1.,1.])
     πη::U                = Beta(3., 1)
     πq::V                = Beta()
     πK::W                = Geometric(0.5)
     Tl::Float64
-    @assert isposdef(Σ₀)
+    @assert isposdef(Ψ)
 end
 
 # one-pass prior computation based on the model
 function logpdf(prior::BMRevJumpPrior, d::DLWGD)
-    @unpack Σ₀, X₀, πη, πq, πK, Tl = prior
+    @unpack Ψ, X₀, πη, πq, πK, Tl = prior
     p = 0.; M = 2; J = 1.; k = 0
     N = ne(d)
     Y = zeros(N, M)
@@ -76,21 +76,21 @@ function logpdf(prior::BMRevJumpPrior, d::DLWGD)
             J *= Δt
         end
     end
-    p += logp_pics(Σ₀, (Y=Y, J=J^(-M/2), A=A, q=M+1, n=N))
+    p += logp_pics(Ψ, (Y=Y, J=J^(-M/2), A=A, q=M+1, n=N))
     p + logpdf(πK, k)
 end
 
-# p(Y|Σ₀,q), q = df, n = # of branches
-function logp_pics(Σ₀, θ)
+# p(Y|Ψ,q), q = df, n = # of branches
+function logp_pics(Ψ, θ)
     @unpack J, A, q, n = θ
     # in our case the Jacobian is a constant (tree and times are fixed)
-    log(J) + (q/2)*log(det(Σ₀)) - ((q + n)/2)*log(det(Σ₀ + A))
+    log(J) + (q/2)*log(det(Ψ)) - ((q + n)/2)*log(det(Ψ + A))
 end
 
 function Base.rand(prior::BMRevJumpPrior, d::DLWGD, k::Int64=-1)
-    @unpack Σ₀, X₀, πη, πq, πK = prior
+    @unpack Ψ, X₀, πη, πq, πK = prior
     model = deepcopy(d)
-    Σ = rand(InverseWishart(3, Σ₀))
+    Σ = rand(InverseWishart(3, Ψ))
     k = k < 0 ? rand(prior.πK) : k
     wgds = Dict()
     for i=1:k
@@ -129,18 +129,18 @@ i.e. states at model nodes are assumed to be states at *branches* of the
 phylogeny.
 """
 @with_kw struct IRRevJumpPrior{T,U,V,W,X} <: RevJumpPrior
-    Σ₀::Matrix{Float64} = [1 0. ; 0. 1]
+    Ψ ::Matrix{Float64} = [1 0. ; 0. 1]
     X₀::T               = MvNormal([1., 1.])
     πη::U               = Beta(3., 1)
     πq::V               = Beta()
     πK::W               = Geometric(0.5)
     πE::X               = nothing
     Tl::Float64
-    @assert isposdef(Σ₀)
+    @assert isposdef(Ψ)
 end
 
 function logpdf(prior::IRRevJumpPrior, d::DLWGD{T}) where T<:Real
-    @unpack Σ₀, X₀, πη, πq, πK, Tl, πE = prior
+    @unpack Ψ, X₀, πη, πq, πK, Tl, πE = prior
     p = 0.; M = 2; J = 1.; k = 0
     N = ne(d)
     Y = zeros(T, N, M)
@@ -165,15 +165,15 @@ function logpdf(prior::IRRevJumpPrior, d::DLWGD{T}) where T<:Real
             end
         end
     end
-    p += logp_pics(Σ₀, (Y=Y, J=1., A=A, q=M+1, n=N))
+    p += logp_pics(Ψ, (Y=Y, J=1., A=A, q=M+1, n=N))
     p + logpdf(πK, k)
 end
 
 function Base.rand(prior::IRRevJumpPrior, d::DLWGD, k::Int64=-1)
-    @unpack Σ₀, X₀, πη, πq, πK = prior
+    @unpack Ψ, X₀, πη, πq, πK = prior
     model = deepcopy(d)
     update!(model[1], :η, rand(πη))
-    Σ = rand(InverseWishart(3, Σ₀))
+    Σ = rand(InverseWishart(3, Ψ))
     r = rand(X₀)
     k = k < 0 ? rand(prior.πK) : k
     wgds = Dict()
@@ -182,7 +182,7 @@ function Base.rand(prior::IRRevJumpPrior, d::DLWGD, k::Int64=-1)
         q = rand(πq)
         wgdnode = addwgd!(model, n, t, q)
         child = nonwgdchild(wgdnode)
-        wgds[wgdnode.i] = (child.i, q)
+        wgds[wgdnode.i] = (child.i, n.i, q, t)
     end
     X = rand(X₀)
     rates = exp.(rand(MvNormal(X, Σ), Beluga.ne(model)+1))
