@@ -70,7 +70,7 @@ and you can easily compute likelihoods (and gradients)
 logpdf!(model, data)
 ```
 
-Now we proceed to the hierarchical model. There is no DSL available (à la
+Now we proceed to the hierarchical model. There is no fancy DSL available (à la
 Turing.jl, Mamba.jl or Soss.jl) but we use a fairly flexible prior struct.
 Here is an exaple for the (recommended) independent rates (IR) prior:
 
