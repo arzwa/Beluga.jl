@@ -1,5 +1,28 @@
-const Proposals = Dict{Int64,Vector{AdaptiveUvProposal{T,V} where {T,V}}}
 const State = Dict{Symbol,Union{Float64,Int64}}
+
+# proposals
+abstract type Proposals end
+
+Base.getindex(p::Proposals, i::Int64) = p.proposals[i]
+Base.setindex!(p::Proposals, x::Vector{<:AdaptiveUvProposal}, i::Int64) = p.proposals[i] = x
+Base.delete!(p::Proposals, i::Int64) = delete!(p.proposals, i)
+reindex!(p::Proposals, i::Int64) = reindex!(p.proposals, i)
+
+struct MWGProposals <: Proposals
+    proposals::Dict{Int64,Vector{AdaptiveUvProposal}}
+end
+
+MWGProposals() =
+    MWGProposals(Dict{Int64,Vector{AdaptiveUvProposal{T,V} where{T,V}}}())
+
+struct AMMProposals <: Proposals
+    rates    ::AdaptiveMixtureProposal
+    proposals::Dict{Int64}
+end
+
+AMMProposals(d::Int64; σ=0.1, β=0.1) = AMMProposals(
+    AdaptiveMixtureProposal(d),
+    Dict{Int64,Vector{AdaptiveUvProposal{T,V} where{T,V}}}())
 
 # reversible jump kernels
 abstract type RevJumpKernel end
@@ -80,12 +103,12 @@ Reversible jump chain struct for DLWGD model inference.
 
 !!! note After construction, an explicit call to `init!` is required.
 """
-@with_kw mutable struct RevJumpChain{T<:Real,V<:ModelNode{T},
+@with_kw mutable struct RevJumpChain{T<:Real,V<:ModelNode{T},P<:Proposals,
         M<:RevJumpPrior,K<:RevJumpKernel}
     data  ::PArray{T}
     model ::DLWGD{T,V}
     prior ::M            = IRRevJumpPrior()
-    props ::Proposals    = Proposals()
+    props ::P            = MWGProposals()
     state ::State        = State(:gen=>0, :logp=>NaN, :logπ=>NaN, :k=>0)
     trace ::DataFrame    = DataFrame()
     kernel::K            = BranchKernel()
@@ -100,14 +123,36 @@ cols(df::DataFrame, s) = [n for n in names(df) if startswith(string(n), s)]
 
 Initialize the chain.
 """
-function init!(chain::RevJumpChain)
+function init!(chain::RevJumpChain; range=-3:0.1:3)
     @unpack data, model, prior, state, props = chain
+    find_initial!(chain, range)
     setstate!(state, model)
-    state[:logp] = logpdf!(model, data)
-    state[:logπ] = logpdf(prior, model)
     trace!(chain)
     set!(data)
     setprops!(props, model)
+end
+
+# finds a good initial constant-rates model
+function find_initial!(chain::RevJumpChain, range)
+    @unpack data, model, prior, state, props = chain
+    rates = getrates(model)
+    bestrates = copy(rates)
+    best = -Inf
+    for r in range
+        rates .= exp(r)
+        setrates!(model, rates)
+        l = logpdf!(model, data)
+        p = logpdf(prior, model)
+        if l + p > best
+            bestrates = copy(rates)
+            best = l + p
+            state[:logp] = l
+            state[:logπ] = p
+        end
+    end
+    setrates!(model, bestrates)
+    l = logpdf!(model, data)  # do not forget to set the right DP matrices!
+    setstate!(state, model)
 end
 
 function setstate!(state, model)
@@ -128,17 +173,29 @@ function setstate!(state, model)
     state[:k] = K
 end
 
-function setprops!(props, model)
+function setprops!(props::MWGProposals, model)
     for (i, n) in model.nodes
         if iswgmafter(n)
             continue
         elseif iswgm(n)
-            props[i] = [AdaptiveUnitProposal(); WgdProposals()]
+            props.proposals[i] = [AdaptiveUnitProposal(); WgdProposals()]
         elseif isroot(n)
-            props[0] = [AdaptiveUnitProposal()]
-            props[i] = CoevolUnProposals()
+            props.proposals[0] = [AdaptiveUnitProposal()]
+            props.proposals[i] = CoevolUnProposals()
         else
-            props[i] = CoevolUnProposals()
+            props.proposals[i] = CoevolUnProposals()
+        end
+    end
+end
+
+function setprops!(props::AMMProposals, model)
+    for (i, n) in model.nodes
+        if iswgmafter(n)
+            continue
+        elseif iswgm(n)
+            props.proposals[i] = [AdaptiveUnitProposal(); WgdProposals()]
+        elseif isroot(n)
+            props.proposals[0] = [AdaptiveUnitProposal()]
         end
     end
 end
@@ -190,7 +247,7 @@ rjmcmc!(chain, n; kwargs...) = rjmcmc!(chain, chain.prior, n; kwargs...)
   mcmc!(chain, n; kwargs...) =   mcmc!(chain, chain.prior, n; kwargs...)
 
 function rjmcmc!(chain, prior::IRRevJumpPrior, n::Int64;
-        trace=1, show=10, rjstart=0, rootequal=false)
+        trace=1, show=10, rjstart=0)
     Tl = prior.Tl
     logheader(stdout)
     for i=1:n
@@ -198,7 +255,7 @@ function rjmcmc!(chain, prior::IRRevJumpPrior, n::Int64;
         if i > rjstart
             rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
         end
-        move!(chain, rootequal=rootequal)
+        move!(chain, chain.props)
         i % trace == 0 ? trace!(chain) : nothing
         if i % show == 0
             logmcmc(stdout, chain)
@@ -215,7 +272,7 @@ function mcmc!(chain, prior::IRRevJumpPrior, n::Int64; trace=1, show=10)
     logheader(stdout)
     for i=1:n
         chain.state[:gen] += 1
-        move!(chain)
+        move!(chain, chain.props)
         i % trace == 0 ? trace!(chain) : nothing
         if i % show == 0
             logmcmc(stdout, chain)
@@ -243,7 +300,8 @@ function logheader(io::IO)
         split("gen pjmp k k2 k3 λ1 λ2 λ3 μ1 μ2 μ3 logp logπ η")...))
 end
 
-function move!(chain; rootequal::Bool=false)
+# Metropolis-within-Gibbs sweep over branches
+function move!(chain, props::MWGProposals)
     @unpack model, prior = chain
     for n in postwalk(model[1])
         if iswgmafter(n)
@@ -254,11 +312,50 @@ function move!(chain; rootequal::Bool=false)
         else
             if isroot(n)
                 move_root!(chain, n)
-                move_node!(chain, n, rootequal)
+                move_node!(chain, n)
             else
                 move_node!(chain, n)
             end
         end
+    end
+    return
+end
+
+# Multivariate update of rates, sweep over WGDs
+function move!(chain, props::AMMProposals; kwargs...)
+    @unpack model, prior = chain
+    move_allrates!(chain)
+    move_root!(chain, model[1])
+    for i in getwgds(model)
+        n = model.nodes[i]
+        if iswgmafter(n)
+            continue
+        elseif iswgm(n)
+            move_wgdtime!(chain, n)
+            move_wgdrates!(chain, n)
+        end
+    end
+    return
+end
+
+function move_allrates!(chain)
+    @unpack data, state, model, props, prior = chain
+    v = getrates(model)
+    w = exp.(props.rates(log.(vcat(v...))))
+    # @show v, w
+    setrates!(model, reshape(w, size(v)...))
+    l_ = logpdf!(model, data)
+    p_ = logpdf(prior, model)
+    hr = l_ + p_ - state[:logp] - state[:logπ]
+    if log(rand()) < hr
+        state[:logp] = l_
+        state[:logπ] = p_
+        setstate!(state, chain.model)
+        set!(data)
+        props.rates.accepted += 1
+    else
+        setrates!(model, v)
+        rev!(data)
     end
     return
 end
