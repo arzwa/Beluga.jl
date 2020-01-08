@@ -200,3 +200,9 @@ function gradient(pr::IRRevJumpPrior, m::DLWGD{T}) where T<:Real
     g = ForwardDiff.gradient(f, v)
     return g::Vector{Float64}
 end
+
+function Base.write(io::IO, prior::T) where T<:RevJumpPrior
+    for f in fieldnames(T)
+        write(io, f, ": ", string(getfield(prior, f)), "\n")
+    end
+end
