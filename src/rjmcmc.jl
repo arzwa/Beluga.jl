@@ -367,14 +367,11 @@ function move_node!(chain, n, equal::Bool=false)
     w::Vector{Float64}, r::Float64 = prop(log.(v))
     equal ? w[2] = w[1] : nothing
     update!(n, (λ=exp(w[1]), μ=exp(w[2])))
-    l_ = logpdf!(n, data)
-    p_ = logpdf(prior, model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] + r
-    # @show l_, p_, exp.(w), v
-    if log(rand()) < hr
+    accept, ℓ, π = acceptreject(chain, ()->logpdf!(n, data), r)
+    if accept
         update!(state, n, :λ, :μ)
-        state[:logp] = l_
-        state[:logπ] = p_
+        state[:logp] = ℓ
+        state[:logπ] = π
         set!(data)
         prop.accepted += 1
     else
@@ -382,6 +379,18 @@ function move_node!(chain, n, equal::Bool=false)
         rev!(data)
     end
     return
+end
+
+# delayed acceptance factorizing prior and likelihood
+function acceptreject(chain, f, q)
+    @unpack prior, model, data, state = chain
+    π  = logpdf(prior, model)
+    α1 = π - state[:logπ] + q
+    accept = log(rand()) < α1
+    ℓ  = accept ? f() : -Inf
+    α2 = ℓ - state[:logp]
+    accept = log(rand()) < α2
+    return accept, ℓ, π
 end
 
 function move_root!(chain, n)
@@ -393,13 +402,11 @@ function move_root!(chain, n)
     η = n[:η]
     η_::Float64, r::Float64 = prop(η)
     update!(n, :η, η_)
-    l_ = logpdfroot(n, data)
-    p_ = logpdf(prior, model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] + r
-    if log(rand()) < hr
+    accept, ℓ, π = acceptreject(chain, ()->logpdfroot(n, data), r)
+    if accept
         update!(state, n, :η)
-        state[:logp] = l_
-        state[:logπ] = p_
+        state[:logp] = ℓ
+        state[:logπ] = π
         set!(data)
         prop.accepted += 1
     else
@@ -429,14 +436,11 @@ function move_wgdtime!(chain, n)
         child[:t] = t
     end
     update!(nextsp)
-    l_ = logpdf!(nextsp, data)  # this was n instead of child, does that work
-                               # here? apparently not!
-    p_ = logpdf(prior, model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] + r
-    if log(rand()) < hr
+    accept, ℓ, π = acceptreject(chain, ()->logpdf!(nextsp, data), r)
+    if accept
         update!(state, n, :q)
-        state[:logp] = l_
-        state[:logπ] = p_
+        state[:logp] = ℓ
+        state[:logπ] = π
         set!(data)
         u < 0.66 ? prop.accepted += 1 : nothing
     else
@@ -461,15 +465,12 @@ function move_wgdrates!(chain, prior::IRRevJumpPrior, n)
     w::Vector{Float64}, r::Float64 = prop(v)
     n[:q] = w[1]
     update!(child, (λ=exp(w[2]), μ=exp(w[3])))
-    l_ = logpdf!(child, data)  # this was n instead of child, but that doesn't
-                               # work right? 16/12/2019
-    p_ = logpdf(prior, model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] + r
-    if log(rand()) < hr
+    accept, ℓ, π = acceptreject(chain, ()->logpdf!(child, data), r)
+    if accept
         update!(state, n, :q)
         update!(state, child, :λ, :μ)
-        state[:logp] = l_
-        state[:logπ] = p_
+        state[:logp] = ℓ
+        state[:logπ] = π
         set!(data)
         prop.accepted += 1
     else
@@ -496,12 +497,10 @@ function move_addwgd!(chain, kernel::SimpleKernel)
     q, lp = forward(kernel)
     wgdnode = addwgd!(chain.model, n, t, q)
     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
-    l_ = logpdf!(child, data)
-    p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] - lp + log(Tl)
-    if log(rand()) < hr
-        state[:logp] = l_
-        state[:logπ] = p_
+    accept, ℓ, π = acceptreject(chain, ()->logpdf!(child, data), -lp+log(Tl))
+    if accept
+        state[:logp] = ℓ
+        state[:logπ] = π
         state[:k] += 1
         s = Symbol("k$(nonwgdchild(wgdnode).i)")
         state[s] = haskey(state, s) ? state[s] + 1 : 1
@@ -526,10 +525,8 @@ function move_rmwgd!(chain, kernel::SimpleKernel)
     n  = nonwgdchild(wgdnode)
     lp = reverse(kernel, wgdnode[:q])
     child = removewgd!(chain.model, wgdnode, false, true)
-    l_ = logpdf!(n, data)
-    p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] + lp - log(Tl)
-    if log(rand()) < hr
+    accept, ℓ, π = acceptreject(chain, ()->logpdf!(n, data), lp-log(Tl))
+    if accept
         # upon acceptance; shrink and reindex
         length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)
         delete!(props, wgdnode.i)
@@ -538,8 +535,8 @@ function move_rmwgd!(chain, kernel::SimpleKernel)
         reindex!(chain.props, wgdnode.i+2)
         set!(data)
         setstate!(state, chain.model)
-        state[:logp] = l_
-        state[:logπ] = p_
+        state[:logp] = ℓ
+        state[:logπ] = π
         kernel.accepted += 1
     else
         addwgd!(chain.model, child, wgdnode, wgdafter)
@@ -562,12 +559,10 @@ function move_addwgd!(chain, kernel::Union{DropKernel,BranchKernel})
     child[:μ] = μ_
     wgdnode = addwgd!(chain.model, n, t, q)
     length(data[1].x) == 0 ? nothing : extend!(data, n.i)
-    l_ = logpdf!(child, data)
-    p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] - lp + log(Tl)  # × (1/T)^-1
-    if log(rand()) < hr
-        state[:logp] = l_
-        state[:logπ] = p_
+    accept, ℓ, π = acceptreject(chain, ()->logpdf!(child, data), -lp+log(Tl))
+    if accept
+        state[:logp] = ℓ
+        state[:logπ] = π
         state[:k] += 1
         s = Symbol("k$(nonwgdchild(wgdnode).i)")
         state[s] = haskey(state, s) ? state[s] + 1 : 1
@@ -599,10 +594,8 @@ function move_rmwgd!(chain, kernel::Union{DropKernel,BranchKernel})
     n[:λ] = λ_
     n[:μ] = μ_
     child = removewgd!(chain.model, wgdnode, false, true)
-    l_ = logpdf!(n, data)
-    p_ = logpdf(prior, chain.model)
-    hr = l_ + p_ - state[:logp] - state[:logπ] + lp - log(Tl)
-    if log(rand()) < hr
+    accept, ℓ, π = acceptreject(chain, ()->logpdf!(n, data), lp-log(Tl))
+    if accept
         # upon acceptance; shrink and reindex
         length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)
         delete!(props, wgdnode.i)
@@ -611,8 +604,8 @@ function move_rmwgd!(chain, kernel::Union{DropKernel,BranchKernel})
         reindex!(chain.props, wgdnode.i+2)
         set!(data)
         setstate!(state, chain.model)
-        state[:logp] = l_
-        state[:logπ] = p_
+        state[:logp] = ℓ
+        state[:logπ] = π
         kernel.accepted += 1
     else
         n[:λ] = λ
