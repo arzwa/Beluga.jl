@@ -1,19 +1,19 @@
-"""
-    Chains(chain::RevJumpChain, burnin)
-
-Obtain and MCMCChains object, with summary and diagnostic statistics.
-"""
-MCMCChains.Chains(c::RevJumpChain, burnin=1000) = Chains(c.trace, burnin)
-
-function MCMCChains.Chains(trace::DataFrame, burnin=1000)
-    df = select(trace, Not([:wgds]))
-    for col in names(df)
-        df[!,col] .= coalesce.(df[!,col], 0.)
-    end
-    @assert size(df)[1] > burnin "# MCMC generations < $burnin (burnin)"
-    X = reshape(Matrix(df), (size(df)...,1))[burnin+1:end, 2:end, :]
-    return Chains(X, [string(x) for x in names(df)][2:end])
-end
+# """
+#     Chains(chain::RevJumpChain, burnin)
+#
+# Obtain and MCMCChains object, with summary and diagnostic statistics.
+# """
+# MCMCChains.Chains(c::RevJumpChain, burnin=1000) = Chains(c.trace, burnin)
+#
+# function MCMCChains.Chains(trace::DataFrame, burnin=1000)
+#     df = select(trace, Not([:wgds]))
+#     for col in names(df)
+#         df[!,col] .= coalesce.(df[!,col], 0.)
+#     end
+#     @assert size(df)[1] > burnin "# MCMC generations < $burnin (burnin)"
+#     X = reshape(Matrix(df), (size(df)...,1))[burnin+1:end, 2:end, :]
+#     return Chains(X, [string(x) for x in names(df)][2:end])
+# end
 
 """
     getwgdtrace(chain)

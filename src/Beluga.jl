@@ -9,7 +9,6 @@ module Beluga
     using StatsBase
     using AdaptiveMCMC
     using LinearAlgebra
-    using MCMCChains
     using Printf
     using ForwardDiff
 
@@ -17,6 +16,7 @@ module Beluga
     import AdaptiveMCMC: ProposalKernel, DecreaseProposal
 
     include("tree.jl")
+    using Beluga.Tree
     include("node.jl")
     include("model.jl")
     include("utils.jl")
