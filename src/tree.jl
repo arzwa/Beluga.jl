@@ -1,6 +1,11 @@
 # Minimal tree ipleentation
 # NOTE: we used OrderedSet as this allows deterministic iteration over
-# childnodes while allowing constant-time insertion and deletion
+# childnodes while allowing constant-time insertion and deletions
+module Tree
+
+using DataStructures
+export TreeNode, isroot, isleaf, postwalk, prewalk, readnw
+
 mutable struct TreeNode{T}
     i::Int64                        # index
     x::T                            # can hold anything, typically a distance
@@ -123,4 +128,5 @@ function get_node_info(nw_str, i)
         bl = sv = -1.
     end
     return sv, bl, i + length(substr) -1
+end
 end
