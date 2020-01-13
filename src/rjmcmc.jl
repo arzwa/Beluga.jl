@@ -21,7 +21,7 @@ struct AMMProposals <: Proposals
 end
 
 AMMProposals(d::Int64; σ=0.1, β=0.1) = AMMProposals(
-    AdaptiveMixtureProposal(d),
+    AdaptiveMixtureProposal(d=d, σ=σ, β=β),
     Dict{Int64,Vector{AdaptiveUvProposal{T,V} where{T,V}}}())
 
 # reversible jump kernels
@@ -324,7 +324,7 @@ end
 # Multivariate update of rates, sweep over WGDs
 function move!(chain, props::AMMProposals; kwargs...)
     @unpack model, prior = chain
-    move_allrates!(chain)
+    move_allrates!(chain, props)
     move_root!(chain, model[1])
     for i in getwgds(model)
         n = model.nodes[i]
@@ -338,7 +338,7 @@ function move!(chain, props::AMMProposals; kwargs...)
     return
 end
 
-function move_allrates!(chain)
+function move_allrates!(chain, props::AMMProposals)
     @unpack data, state, model, props, prior = chain
     v = getrates(model)
     w = exp.(props.rates(log.(vcat(v...))))
@@ -524,8 +524,12 @@ function move_rmwgd!(chain, kernel::SimpleKernel)
     wgdafter = first(wgdnode)
     n  = nonwgdchild(wgdnode)
     lp = reverse(kernel, wgdnode[:q])
+    # println("-"^70)
+    # @show sort(collect(keys(chain.model.nodes)))
     child = removewgd!(chain.model, wgdnode, false, true)
     accept, ℓ, π = acceptreject(chain, ()->logpdf!(n, data), lp-log(Tl))
+    # @show sort(collect(keys(chain.model.nodes)))
+    # println("-"^70)
     if accept
         # upon acceptance; shrink and reindex
         length(data[1].x) == 0 ? nothing : shrink!(data, wgdnode.i)

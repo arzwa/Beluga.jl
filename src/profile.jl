@@ -121,7 +121,7 @@ function addwgds!(m::DLWGD, p::PArray, config::Array)
         haskey(x, :l) && x.l == 3 ?
             addwgt!(m, n, n[:t]*x.t, x.q) :
             addwgd!(m, n, n[:t]*x.t, x.q)
-        extend!(p, n.i)
+        length(p[1].x) == 0 ? nothing : extend!(p, n.i)
     end
 end
 
@@ -140,7 +140,7 @@ function addwgds!(model::DLWGD, p::PArray, wgds::Dict)
         for wgd in v
             n, t = closestnode(model[k], wgd[1])
             addwgd!(model, n, t, wgd[2])
-            extend!(p, n.i)
+            length(p[1].x) == 0 ? nothing : extend!(p, n.i)
         end
     end
 end
