@@ -17,11 +17,13 @@ MWGProposals() =
 
 struct AMMProposals <: Proposals
     rates    ::AdaptiveMixtureProposal
+    shift    ::AdaptiveUvProposal
     proposals::Dict{Int64}
 end
 
 AMMProposals(d::Int64; σ=0.1, β=0.1) = AMMProposals(
     AdaptiveMixtureProposal(d=d, σ=σ, β=β),
+    AdaptiveUnProposal(),
     Dict{Int64,Vector{AdaptiveUvProposal{T,V} where{T,V}}}())
 
 # reversible jump kernels
@@ -112,6 +114,7 @@ Reversible jump chain struct for DLWGD model inference.
     state ::State        = State(:gen=>0, :logp=>NaN, :logπ=>NaN, :k=>0)
     trace ::DataFrame    = DataFrame()
     kernel::K            = BranchKernel()
+    da    ::Bool         = true
 end
 
 Base.rand(df::DataFrame) = df[rand(1:size(df)[1]),:]
@@ -281,6 +284,30 @@ function mcmc!(chain, prior::IRRevJumpPrior, n::Int64; trace=1, show=10)
     end
 end
 
+# delayed acceptance factorizing prior and likelihood
+acceptreject(chain, f, q) =
+    chain.da ? acceptreject_da(chain, f, q) : acceptreject_default(chain, f, q)
+
+function acceptreject_da(chain, f, q)
+    @unpack prior, model, data, state = chain
+    π  = logpdf(prior, model)
+    α1 = min(π - state[:logπ] + q, 0.)
+    accept = log(rand()) < α1
+    ℓ  = accept ? f() : -Inf
+    α2 = min(ℓ - state[:logp], 0.)
+    accept = log(rand()) < α2
+    return accept, ℓ, π
+end
+
+function acceptreject_default(chain, f, q)
+    @unpack prior, model, data, state = chain
+    π  = logpdf(prior, model)
+    ℓ  = f()
+    α  = π + ℓ - state[:logπ] - state[:logp] + q
+    accept = log(rand()) < α
+    return accept, ℓ, π
+end
+
 function logmcmc(io::IO, chain)
     @unpack trace, kernel = chain
     x = last(trace)
@@ -324,7 +351,8 @@ end
 # Multivariate update of rates, sweep over WGDs
 function move!(chain, props::AMMProposals; kwargs...)
     @unpack model, prior = chain
-    move_allrates!(chain, props)
+    move_allrates!(chain, props.shift)
+    move_allrates!(chain, props.rates)
     move_root!(chain, model[1])
     for i in getwgds(model)
         n = model.nodes[i]
@@ -338,21 +366,18 @@ function move!(chain, props::AMMProposals; kwargs...)
     return
 end
 
-function move_allrates!(chain, props::AMMProposals)
-    @unpack data, state, model, props, prior = chain
+function move_allrates!(chain, prop)
+    @unpack data, state, model, prior = chain
     v = getrates(model)
-    w = exp.(props.rates(log.(vcat(v...))))
-    # @show v, w
-    setrates!(model, reshape(w, size(v)...))
-    l_ = logpdf!(model, data)
-    p_ = logpdf(prior, model)
-    hr = l_ + p_ - state[:logp] - state[:logπ]
-    if log(rand()) < hr
-        state[:logp] = l_
-        state[:logπ] = p_
+    w, r = prop(log.(vcat(v...)))
+    setrates!(model, reshape(exp.(w), size(v)...))
+    accept, ℓ, π = acceptreject(chain, ()->logpdf!(model, data), r)
+    if accept
+        state[:logp] = ℓ
+        state[:logπ] = π
         setstate!(state, chain.model)
         set!(data)
-        props.rates.accepted += 1
+        prop.accepted += 1
     else
         setrates!(model, v)
         rev!(data)
@@ -379,18 +404,6 @@ function move_node!(chain, n, equal::Bool=false)
         rev!(data)
     end
     return
-end
-
-# delayed acceptance factorizing prior and likelihood
-function acceptreject(chain, f, q)
-    @unpack prior, model, data, state = chain
-    π  = logpdf(prior, model)
-    α1 = π - state[:logπ] + q
-    accept = log(rand()) < α1
-    ℓ  = accept ? f() : -Inf
-    α2 = ℓ - state[:logp]
-    accept = log(rand()) < α2
-    return accept, ℓ, π
 end
 
 function move_root!(chain, n)
