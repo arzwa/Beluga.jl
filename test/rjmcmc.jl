@@ -65,7 +65,7 @@ begin
     kernel = Beluga.BranchKernel(qkernel=Beta(1,3))
     props = Beluga.AMMProposals(2*Beluga.ne(d)+2, σ=0.1, β=0.05)
     chain = RevJumpChain(data=p, model=d, prior=prior,
-        kernel=kernel, props=props, da=false)
+        kernel=kernel, props=props, da=true)
     init!(chain)
     for i=1:100
         @time rjmcmc!(chain, 100, trace=1, show=10)
