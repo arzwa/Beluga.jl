@@ -159,7 +159,7 @@ function logpdf(prior::IRRevJumpPrior, d::DLWGD{T}) where T<:Real
             rates = n[:λ, :μ]
             Y[i-1,:] = log.(rates) - X0
             A += Y[i-1,:]*Y[i-1,:]'
-            if πE != nothing
+            if !isnothing(πE)
                 t  = parentdist(n, nonwgdparent(n.p))
                 p += logpdf(πE, expectedX(rates[1], rates[2], t))
             end
