@@ -144,3 +144,9 @@ function addwgds!(model::DLWGD, p::PArray, wgds::Dict)
         end
     end
 end
+
+function addwgds!(p::PArray, wgds::Dict)
+    for (k,v) in sort(wgds)
+        length(p[1].x) == 0 ? nothing : extend!(p, v[1])
+    end
+end

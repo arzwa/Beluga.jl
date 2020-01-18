@@ -51,8 +51,8 @@ Random.seed!(143)
 end
 
 begin
-    nw = readline("example/9dicots/dicots.nw")
-    df = CSV.read("example/9dicots/dicots-f01-100.csv")
+    nw = readline("example/9dicots/9dicots.nw")
+    df = CSV.read("example/9dicots/9dicots-f01-100.csv")
     d, p = DLWGD(nw, df, 2., 2., 0.9)
     # d, p = DLWGD(nw, 2., 2., 0.9)
     prior = IRRevJumpPrior(

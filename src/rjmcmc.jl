@@ -126,36 +126,38 @@ cols(df::DataFrame, s) = [n for n in names(df) if startswith(string(n), s)]
 
 Initialize the chain.
 """
-function init!(chain::RevJumpChain; range=-3:0.1:3)
+function init!(chain::RevJumpChain; ninit=50)
     @unpack data, model, prior, state, props = chain
-    find_initial!(chain, range)
-    setstate!(state, model)
+    find_initial!(chain, ninit)
+    setstate!(state, chain.model)
     trace!(chain)
-    set!(data)
-    setprops!(props, model)
+    set!(chain.data)
+    setprops!(props, chain.model)
 end
 
-# finds a good initial constant-rates model
-function find_initial!(chain::RevJumpChain, range)
+# draw some inits from the prior and keep the one with highest posterior
+function find_initial!(chain::RevJumpChain, n)
     @unpack data, model, prior, state, props = chain
-    rates = getrates(model)
-    bestrates = copy(rates)
     best = -Inf
-    for r in range
-        rates .= exp(r)
-        setrates!(model, rates)
-        l = logpdf!(model, data)
-        p = logpdf(prior, model)
+    bestmodel = nothing
+    for i=1:n
+        data_ = deepcopy(data)
+        x = rand(prior, model)
+        addwgds!(data_, x.wgds)
+        l = logpdf!(x.model, data_)
+        p = logpdf(prior, x.model)
         if l + p > best
-            bestrates = copy(rates)
+            bestmodel = x
             best = l + p
             state[:logp] = l
             state[:logπ] = p
         end
     end
-    setrates!(model, bestrates)
+    model = bestmodel.model
+    addwgds!(data, bestmodel.wgds)
     l = logpdf!(model, data)  # do not forget to set the right DP matrices!
-    setstate!(state, model)
+    chain.model = model
+    chain.data = data
 end
 
 function setstate!(state, model)
