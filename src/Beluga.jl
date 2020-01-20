@@ -1,7 +1,7 @@
 module Beluga
     using Parameters
     using StatsFuns
-    using DataStructures
+    using NewickTree
     using Distributions
     using DistributedArrays
     using DataFrames
@@ -15,8 +15,6 @@ module Beluga
     import Distributions: logpdf, logpdf!, pdf
     import AdaptiveMCMC: ProposalKernel, DecreaseProposal
 
-    include("tree.jl")
-    using Beluga.Tree
     include("node.jl")
     include("model.jl")
     include("utils.jl")

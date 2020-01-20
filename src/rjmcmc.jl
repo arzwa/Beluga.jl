@@ -8,6 +8,14 @@ Base.setindex!(p::Proposals, x::Vector{<:AdaptiveUvProposal}, i::Int64) = p.prop
 Base.delete!(p::Proposals, i::Int64) = delete!(p.proposals, i)
 reindex!(p::Proposals, i::Int64) = reindex!(p.proposals, i)
 
+"""
+    MWGProposals
+
+Proposals for the Metropolis-within-Gibbs algorithm. The MWG algorithm iterates
+over each node in the tree, resulting in very good mixing and fast convergence
+in terms of number of iterations, but has quite a high computational cost per
+generation.
+"""
 struct MWGProposals <: Proposals
     proposals::Dict{Int64,Vector{AdaptiveUvProposal}}
 end
@@ -15,6 +23,12 @@ end
 MWGProposals() =
     MWGProposals(Dict{Int64,Vector{AdaptiveUvProposal{T,V} where{T,V}}}())
 
+"""
+    AMMProposals(d)
+
+Adaptive Mixture Metropolis (AMM) proposals, where `d` is the dimensionality
+of the rates vector (should be 2 × number of nodes in tree).
+"""
 struct AMMProposals <: Proposals
     rates    ::AdaptiveMixtureProposal
     shift    ::AdaptiveUvProposal
