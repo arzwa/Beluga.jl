@@ -26,9 +26,9 @@ module Beluga
 
     export readnw
     export DLWGD, Profile, PArray
-    export RevJumpChain, IRRevJumpPrior, BMRevJumpPrior, PostPredSim
+    export RevJumpChain, IRRevJumpPrior, BMRevJumpPrior, CRRevJumpPrior
     export addwgd!, removewgd!, addwgds!, removewgds!, setrates!, getrates
     export logpdf, logpdf!, gradient, asvector, treelength
     export init!, mcmc!, rjmcmc!, getwgdtrace, bayesfactors
-    export posteriorΣ!, posteriorE!, pppvalues
+    export posteriorΣ!, posteriorE!, pppvalues, PostPredSim
 end

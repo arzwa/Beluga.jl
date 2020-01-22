@@ -206,3 +206,48 @@ function Base.write(io::IO, prior::T) where T<:RevJumpPrior
         write(io, f, ": ", string(getfield(prior, f)), "\n")
     end
 end
+
+"""
+    CRRevJumpPrior
+
+Constant-rates model.
+"""
+@with_kw struct CRRevJumpPrior{T,U,V,W} <: RevJumpPrior
+    X₀::T               = MvNormal([1., 1.])
+    πη::U               = Beta(3., 1)
+    πq::V               = Beta()
+    πK::W               = Geometric(0.5)
+    Tl::Float64
+end
+
+function logpdf(prior::CRRevJumpPrior, d::DLWGD{T}) where T<:Real
+    @unpack X₀, πη, πq, πK, Tl = prior
+    k = 0
+    X0 = log.(d[1][:λ, :μ])
+    p = logpdf(πη, d[1][:η]) + logpdf(X₀, X0)
+    for i in getwgds(d)
+        p += logpdf(πq, d[i][:q]) - log(Tl)
+        k += 1
+    end
+    p + logpdf(πK, k)
+end
+
+function Base.rand(prior::CRRevJumpPrior, d::DLWGD, k::Int64=-1)
+    @unpack X₀, πη, πq, πK = prior
+    X = rand(X₀)
+    r = getrates(d)
+    r[1,:] .= exp(X[1])
+    r[2,:] .= exp(X[2])
+    x = vcat(r[1,:], r[2,:], rand(πη))
+    model = d(x)
+    k = k < 0 ? rand(prior.πK) : k
+    wgds = Dict()
+    for i=1:k
+        n, t = randpos(model)
+        q = rand(πq)
+        wgdnode = addwgd!(model, n, t, q)
+        child = nonwgdchild(wgdnode)
+        wgds[wgdnode.i] = (child.i, n.i, q, t)
+    end
+    (model=model, η=model[1,:η], rates=r, wgds=wgds)
+end

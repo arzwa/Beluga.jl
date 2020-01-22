@@ -1,5 +1,6 @@
 const State = Dict{Symbol,Union{Float64,Int64}}
 
+
 # proposals
 abstract type Proposals end
 
@@ -39,6 +40,7 @@ AMMProposals(d::Int64; σ=0.1, β=0.1) = AMMProposals(
     AdaptiveMixtureProposal(d=d, σ=σ, β=β),
     AdaptiveUnProposal(),
     Dict{Int64,Vector{AdaptiveUvProposal{T,V} where{T,V}}}())
+
 
 # reversible jump kernels
 abstract type RevJumpKernel end
@@ -111,6 +113,7 @@ function reverse(kernel::BranchKernel, λ::Float64, μ::Float64, q::Float64)
     λ, μ, logpdf(kernel.qkernel, q)
 end
 
+
 # reversible jump chain
 """
     RevJumpChain
@@ -146,7 +149,7 @@ function init!(chain::RevJumpChain; ninit=50)
     setstate!(state, chain.model)
     trace!(chain)
     set!(chain.data)
-    setprops!(props, chain.model)
+    setprops!(props, chain)
 end
 
 # draw some inits from the prior and keep the one with highest posterior
@@ -192,7 +195,8 @@ function setstate!(state, model)
     state[:k] = K
 end
 
-function setprops!(props::MWGProposals, model)
+function setprops!(props::MWGProposals, chain)
+    @unpack model, prior = chain
     for (i, n) in model.nodes
         if iswgmafter(n)
             continue
@@ -201,13 +205,13 @@ function setprops!(props::MWGProposals, model)
         elseif isroot(n)
             props.proposals[0] = [AdaptiveUnitProposal()]
             props.proposals[i] = CoevolUnProposals()
-        else
+        elseif !(typeof(prior)<:CRRevJumpPrior)
             props.proposals[i] = CoevolUnProposals()
         end
     end
 end
 
-function setprops!(props::AMMProposals, model)
+function setprops!(props::AMMProposals, chain)
     for (i, n) in model.nodes
         if iswgmafter(n)
             continue
@@ -265,7 +269,7 @@ end
 rjmcmc!(chain, n; kwargs...) = rjmcmc!(chain, chain.prior, n; kwargs...)
   mcmc!(chain, n; kwargs...) =   mcmc!(chain, chain.prior, n; kwargs...)
 
-function rjmcmc!(chain, prior::IRRevJumpPrior, n::Int64;
+function rjmcmc!(chain, prior::RevJumpPrior, n::Int64;
         trace=1, show=10, rjstart=0)
     Tl = prior.Tl
     logheader(stdout)
@@ -274,24 +278,21 @@ function rjmcmc!(chain, prior::IRRevJumpPrior, n::Int64;
         if i > rjstart
             rand() < 0.5 ? move_rmwgd!(chain) : move_addwgd!(chain)
         end
-        move!(chain, chain.props)
+        move!(chain, chain.prior, chain.props)
         i % trace == 0 ? trace!(chain) : nothing
-        if i % show == 0
-            logmcmc(stdout, chain)
-            flush(stdout)
-        end
-        # NOTE: just to be sure there are no rogue nodes in the tree
+        i % show  == 0 ? logmcmc(stdout, chain) : nothing
+        flush(stdout)
         @assert length(chain.model.nodes) == length(postwalk(chain.model[1]))
         L = treelength(chain.model)
         @assert isapprox(Tl, L) "Tree length $L != $Tl"
     end
 end
 
-function mcmc!(chain, prior::IRRevJumpPrior, n::Int64; trace=1, show=10)
+function mcmc!(chain, prior::RevJumpPrior, n::Int64; trace=1, show=10)
     logheader(stdout)
     for i=1:n
         chain.state[:gen] += 1
-        move!(chain, chain.props)
+        move!(chain, chain.prior, chain.props)
         i % trace == 0 ? trace!(chain) : nothing
         if i % show == 0
             logmcmc(stdout, chain)
@@ -343,9 +344,19 @@ function logheader(io::IO)
         split("gen pjmp k k2 k3 λ1 λ2 λ3 μ1 μ2 μ3 logp logπ η")...))
 end
 
+function move!(chain, prior::CRRevJumpPrior, props::MWGProposals)
+    @unpack model = chain
+    move_cr!(chain)
+    move_root!(chain, model[1])
+    for i in getwgds(model)
+        move_wgdtime!(chain, model[i])
+    end
+    return
+end
+
 # Metropolis-within-Gibbs sweep over branches
-function move!(chain, props::MWGProposals)
-    @unpack model, prior = chain
+function move!(chain, prior::IRRevJumpPrior, props::MWGProposals)
+    @unpack model = chain
     for n in postwalk(model[1])
         if iswgmafter(n)
             continue
@@ -365,7 +376,7 @@ function move!(chain, props::MWGProposals)
 end
 
 # Multivariate update of rates, sweep over WGDs
-function move!(chain, props::AMMProposals; kwargs...)
+function move!(chain, prior::IRRevJumpPrior, props::AMMProposals; kwargs...)
     @unpack model, prior = chain
     move_allrates!(chain, props.shift)
     move_allrates!(chain, props.rates)
@@ -396,6 +407,30 @@ function move_allrates!(chain, prop)
         prop.accepted += 1
     else
         setrates!(model, v)
+        rev!(data)
+    end
+    return
+end
+
+function move_cr!(chain)
+    @unpack data, state, model, props, prior = chain
+    X = getrates(model)
+    Y = deepcopy(X)
+    v = model[1][:λ, :μ]
+    prop = rand(props[1])
+    w::Vector{Float64}, r::Float64 = prop(log.(v))
+    X[1,:] .= exp(w[1])
+    X[2,:] .= exp(w[2])
+    setrates!(model, X)
+    accept, ℓ, π = acceptreject(chain, ()->logpdf!(model, data), r)
+    if accept
+        setstate!(state, chain.model)
+        state[:logp] = ℓ
+        state[:logπ] = π
+        set!(data)
+        prop.accepted += 1
+    else
+        setrates!(model, Y)
         rev!(data)
     end
     return
@@ -484,7 +519,7 @@ end
 
 move_wgdrates!(chain, n) = move_wgdrates!(chain, chain.prior, n)
 
-function move_wgdrates!(chain, prior::IRRevJumpPrior, n)
+function move_wgdrates!(chain, prior, n)
     @unpack data, state, model, props, prior = chain
     q = n[:q]
     child = nonwgdchild(n)

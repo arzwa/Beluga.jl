@@ -206,9 +206,16 @@ nwgd(model::DLWGD) = length(getwgds(model))
 randwgd(model::DLWGD) = model[rand(getwgds(model))]
 
 function getwgds(model)
-    wgds = Int64[]; i = maximum(keys(model.nodes))
-    while isawgd(model[i])
-        iswgm(model[i]) ? push!(wgds, i) : nothing
+    wgds = Int64[]
+    i = maximum(keys(model.nodes))
+    cont = true
+    while cont
+        if !haskey(model.nodes, i) || iswgmafter(model[i])
+        elseif iswgm(model[i])
+            push!(wgds, i)
+        else
+            cont = false
+        end
         i -= 1
     end
     wgds
@@ -508,6 +515,17 @@ function gradient(d::DLWGD{T}, x::Vector{Int64}) where T<:Real
     v = asvector(d)
     f = (u) -> logpdf(d(u), x)
     g = ForwardDiff.gradient(f, v)
+    return g::Vector{Float64}
+end
+
+# gradient for the constant rates model
+function gradient_cr(d::DLWGD{T}, x::Vector{Int64}) where T<:Real
+    v = asvector(d)
+    n = Beluga.ne(d)+1
+    w = [v[1], v[n+1]]
+    fullvec(x) = [repeat([x[1]], n); repeat([x[2]], n); v[end]]
+    f = (u) -> logpdf(d(fullvec(u)), x)
+    g = ForwardDiff.gradient(f, w)
     return g::Vector{Float64}
 end
 

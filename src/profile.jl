@@ -63,6 +63,9 @@ matrix `p`.
 gradient(d::DLWGD, p::PArray{T}) where T =
     mapreduce((x)->gradient(d, x.xp), +, p)::Vector{T}
 
+gradient_cr(d::DLWGD, p::PArray{T}) where T =
+    mapreduce((x)->gradient_cr(d, x.xp), +, p)::Vector{T}
+
 # Efficient setting/resetting
 # copyto! approach is slightly faster, but not compatible with arrays of ≠ dims
 set!(p::PArray) = map!(_set!, p, p)
