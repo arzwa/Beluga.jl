@@ -49,7 +49,7 @@ end
 
 begin
     nw = readline("example/9dicots/9dicots.nw")
-    df = CSV.read("example/9dicots/9dicots-f01-100.csv")
+    df = CSV.read("example/9dicots/9dicots-f01-1000.csv")
     d, p = DLWGD(nw, df, 2., 2., 0.9)
     prior = Beluga.CRRevJumpPrior(
         X₀=MvNormal(log.([1,1]), [0.2 0.; 0. 0.2]),
@@ -64,8 +64,3 @@ begin
         @time rjmcmc!(chain, 100, trace=1, show=10)
     end
 end
-
-#     DA: 143.103991 seconds (501.90 M allocations: 107.977 GiB, 10.66% gc time)
-#  no DA: 189.500442 seconds (796.78 M allocations: 169.154 GiB, 10.63% gc time)
-# DA+AMM: 103.014576 seconds (350.40 M allocations: 72.692 GiB, 15.11% gc time)
-# BUT: pjump(DA) << pjump(no-DA) and average prior DA > no-DA
