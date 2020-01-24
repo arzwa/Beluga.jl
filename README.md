@@ -13,6 +13,7 @@ Beluga requires unregistered dependencies, to install Beluga, fire up a julia
 session, hit `]` and add the following:
 
 ```
+(v1.3) pkg> add https://github.com/arzwa/NewickTree.jl
 (v1.3) pkg> add https://github.com/arzwa/AdaptiveMCMC.jl
 (v1.3) pkg> add https://github.com/arzwa/Beluga.jl
 ```
