@@ -212,6 +212,7 @@ function setprops!(props::MWGProposals, chain)
 end
 
 function setprops!(props::AMMProposals, chain)
+    @unpack model, prior = chain
     for (i, n) in model.nodes
         if iswgmafter(n)
             continue

@@ -26,6 +26,7 @@ module Beluga
 
     export readnw
     export DLWGD, Profile, PArray
+    export BranchKernel, SimpleKernel, DropKernel
     export RevJumpChain, IRRevJumpPrior, BMRevJumpPrior, CRRevJumpPrior
     export addwgd!, removewgd!, addwgds!, removewgds!, setrates!, getrates
     export logpdf, logpdf!, gradient, asvector, treelength
