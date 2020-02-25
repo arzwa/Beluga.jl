@@ -101,6 +101,20 @@ sed -i 's/NANSAFE_MODE_ENABLED = false/NANSAFE_MODE_ENABLED = true/g' ~/.julia/p
 ## Citation
 
 Beluga.jl is developed by Arthur Zwaenepoel at the VIB/UGent center for plant
-systems biology (bioinformatics and evolutionary genomics group). A paper is
-in preparation, if you use the code in this package in the mean time, please
-cite this github repository.
+systems biology (bioinformatics and evolutionary genomics group). A preprint on the
+reversible-jump sampler for WGD inference implemented in this library can be found
+[at BioRXiv](https://www.biorxiv.org/content/early/2020/01/25/2020.01.24.917997).
+
+```
+@article {zwaenepoel2020,
+	author = {Zwaenepoel, Arthur and Van de Peer, Yves},
+	title = {Model-based detection of whole-genome duplications in a phylogeny},
+	elocation-id = {2020.01.24.917997},
+	year = {2020},
+	doi = {10.1101/2020.01.24.917997},
+	publisher = {Cold Spring Harbor Laboratory},
+	URL = {https://www.biorxiv.org/content/early/2020/01/25/2020.01.24.917997},
+	eprint = {https://www.biorxiv.org/content/early/2020/01/25/2020.01.24.917997.full.pdf},
+	journal = {bioRxiv}
+}
+```
