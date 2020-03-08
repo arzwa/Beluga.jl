@@ -20,6 +20,8 @@ session, hit `]` and add the following:
 
 ## Usage
 
+Please refer to the [documentation](https://arzwa.github.io/Beluga.jl/dev) for more hints on usage.
+
 ```julia
 using Beluga, CSV, DataFrames, Parameters
 
