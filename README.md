@@ -20,14 +20,15 @@ session, hit `]` and add the following:
 
 ## Usage
 
-Please refer to the [documentation](https://arzwa.github.io/Beluga.jl/dev) for more hints on usage.
+Please refer to the [documentation](https://arzwa.github.io/Beluga.jl/dev) for more detailed 
+usage examples.
 
 ```julia
 using Beluga, CSV, DataFrames, Parameters
 
 # get some data
-tree = readline("example/dicots/dicots.nw")
-df = CSV.read("example/dicots/dicots-f01-25.csv")
+tree = readline("example/9dicots/9dicots.nw")
+df = CSV.read("example/9dicots/9dicots-f01-25.csv")
 
 # construct model and profile
 λ, μ, η = 1.0, 0.92, 0.66
@@ -47,10 +48,10 @@ model = model(x)
 l = logpdf!(model, profile)
 
 # change parameters at node 5
-update!(model[5], (λ=1.5, μ=1.2))
+Beluga.update!(model[5], (λ=1.5, μ=1.2))
 
 # change η parameter at root
-update!(model[1], :η, 0.91)
+Beluga.update!(model[1], :η, 0.91)
 
 # recompute likelihood efficiently starting from node 5
 l = logpdf!(model[5], profile)
@@ -58,9 +59,9 @@ l = logpdf!(model[5], profile)
 # gradient
 g = gradient(model, profile)
 
-# add a WGD node above node 6 at a distance 0.1 with q=0.25
-addwgd!(model, model[6], 0.1, 0.25)
-extend!(profile, 6);
+# add a WGD node above node 6 at a distance 0.01 with q=0.25
+addwgd!(model, model[6], 0.01, 0.25)
+Beluga.extend!(profile, 6);
 
 # compute the log-likelihood, now for the model with the WGD
 logpdf!(model, profile)
@@ -72,7 +73,7 @@ rand(model)
 rand(model, 100)
 
 # independent rates prior (check & adapt default settings!)
-prior = IRRevJumpPrior()
+prior = IRRevJumpPrior(Tl=treelength(model))
 logpdf(prior, model)
 
 # sample random model from prior
