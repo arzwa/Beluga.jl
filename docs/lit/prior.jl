@@ -6,7 +6,8 @@
 # Of course, this cannot idicate probems in the likelihood implementation! (which
 # can also be quite complicated in phylogenetic applications, at least in my humble
 # opinion).
-using Distributions, Beluga, Plots, StatsPlots, LaTeXStrings
+using Distributions, Beluga, Plots, StatsPlots, LaTeXStrings, Random
+Random.seed!(190894)
 
 # Obtain the species tree
 nw = readline(joinpath(@__DIR__, "../../example/9dicots/9dicots.nw"))
