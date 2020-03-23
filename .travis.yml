@@ -9,6 +9,7 @@ jobs:
         - julia --project=docs/ -e 'using Pkg;
               Pkg.add(PackageSpec(url="https://github.com/arzwa/NewickTree.jl"));
               Pkg.add(PackageSpec(url="https://github.com/arzwa/AdaptiveMCMC.jl"));
+              Pkg.add(PackageSpec(url="https://github.com/arzwa/DiscreteMarkovFit.jl"));
               Pkg.instantiate();
               Pkg.develop(PackageSpec(path=pwd()))'
         - julia --project=docs/ docs/make.jl

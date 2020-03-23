@@ -13,7 +13,7 @@ Zwaenepoel & Van de Peer (2020, *in preparation*).
 
 To perform analyses with Beluga, you will need  
 
-1. An ultrametric species tree (time tree)
+1. A species tree with branch lengths (preferbly an ultrametric time tree)
 2. A *phylogenetic profile matrix*. If you have a bunch of protein fasta files
    for a set of species of interest, this can be easily obtained using e.g.
    [OrthoFinder](https://github.com/davidemms/OrthoFinder).

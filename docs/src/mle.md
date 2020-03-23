@@ -1,7 +1,7 @@
 
-# Maximum likelihood estimation
+# Maximum likelihood estimation for the DLWGD model using `Beluga.jl`
 
-We'll need the folowing packages loaded
+We'll need the folowing packages loaded:
 
 ```@example mle
 using Beluga, CSV, DataFrames, Optim
@@ -54,6 +54,7 @@ example code
 newmodel = model(rand(length(v)))
 @show asvector(newmodel)
 ```
+
 In the constant rates model, we assume all duplication rates and all loss
 rates are identical across the tree respectively. The `fullvec(θ)` function
 defined above will construct a full model vector, from which we can construct
@@ -64,11 +65,15 @@ Now for optimization. Let's try two optimization algorithms, one only using the
 likelihood (using the Nelder-Mead downhill simplex algorithm), and another using
 gradient information (using the LBFGS algorithm)
 
+Using Nelder-Mead
+
 ```@example mle
 init = randn(2)
 results = optimize(f, init)
 @show exp.(results.minimizer)
 ```
+
+Using LBFGS (requires gradients!)
 
 ```@example mle
 init = randn(2)
@@ -85,5 +90,10 @@ results = optimize(f, g!, init)
     ```
     rm -r ~/.julia/compiled/v1.3/ForwardDiff
     sed -i 's/NANSAFE_MODE_ENABLED = false/NANSAFE_MODE_ENABLED = true/g' \
-        ~/.julia/packages/ForwardDiff/*/src/prelude.jl
+    ~/.julia/packages/ForwardDiff/*/src/prelude.jl
     ```
+
+---
+
+*This page was generated using [Literate.jl](https://github.com/fredrikekre/Literate.jl).*
+
