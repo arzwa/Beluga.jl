@@ -100,8 +100,8 @@ d = ObservedBirthDeathChain(Array(chain.trace[100:end,:k]))
 out = DiscreteMarkovFit.sample(d, 10000);
 
 # This shows the effective sample size for the number of WGDs and the associated
-# posterior probabilities. The maximum a posteriori (MAP) number of WGDs here is
-# 3. When doing a serious analysis, one should aim for higher ESS values of course.
+# posterior probabilities. The maximum a posteriori (MAP) number of WGDs here is 3.
+# When doing a serious analysis, one should aim for higher ESS values of course.
 
 # We can also compute Bayes factors to get an idea of the number of WGDs for each
 # branch in the species tree.
