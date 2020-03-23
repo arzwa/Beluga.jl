@@ -1,7 +1,8 @@
 # # WGD inference using reversible-jump MCMC and gene count data
 
 # Load Beluga and required packages:
-using Beluga, CSV, Distributions
+using Beluga, CSV, Distributions, Random
+Random.seed!(23031964)
 
 # Or, if you are running a julia session with multiple processes (when you started
 # julia with `-p` option, or manually added workers using `addprocs`, see
@@ -86,7 +87,7 @@ p3 = plot(chain.trace[!,:k], label=L"k")
 p4 = plot(chain.trace[!,:η1], label=L"\eta")
 plot(p1,p2,p3,p4, grid=false, layout=(2,2))
 
-# Clearly, we should sample way longer to get decent estimtes for the duplication
+# Clearly, we should sample way longer to get decent estimates for the duplication
 # rates (`λ`), loss rates (`μ`) and number of WGDs (`k`). Note how `η` is quite
 # well-sampled already.
 
@@ -97,18 +98,18 @@ using DiscreteMarkovFit
 
 # We'll discard a burnin of 100 iterations
 d = ObservedBirthDeathChain(Array(chain.trace[100:end,:k]))
-out = DiscreteMarkovFit.sample(d, 10000);
+out = DiscreteMarkovFit.sample(d, 10000)
 
 # This shows the effective sample size for the number of WGDs and the associated
-# posterior probabilities. The maximum a posteriori (MAP) number of WGDs here is 3.
+# posterior probabilities. The maximum a posteriori (MAP) number of WGDs here is three.
 # When doing a serious analysis, one should aim for higher ESS values of course.
 
 # We can also compute Bayes factors to get an idea of the number of WGDs for each
 # branch in the species tree.
 bfs = bayesfactors(chain, burnin=100);
 
-# This suggests strong support for WGD in quinoa (`cqu`) and poplar (`ptr`), which
-# we now have very strong sigatures of ancestral WGDs in their genomes.  Note that
+# This suggests strong support for WGD in quinoa (`cqu`), for which we know
+# the genome shows a strong signature of an ancestral WGD.  Note that
 # we already detect these WGDs using a mere 25 gene families as data!
 
 # A plot of the posterior probabilities for the number of WGDs on each branch

@@ -3,7 +3,7 @@
 # Running an MCMC algorithm without data should result in a sample from the prior.
 # This is commonly used in complicated Bayesian inference settings such as those
 # arising in phylogenetics to verify correct implemetation of an MCMC algorithm.
-# Of course, this cannot idicate probems in the likelihood implementation! (which
+# Of course, this cannot indicate problems in the likelihood implementation! (which
 # can also be quite complicated in phylogenetic applications, at least in my humble
 # opinion).
 using Distributions, Beluga, Plots, StatsPlots, LaTeXStrings, Random
