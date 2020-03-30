@@ -1,4 +1,3 @@
-abstract type PhyloBDPModel{T} end
 
 """
     DLWGD{T<:Real,V<:ModelNode{T}}
@@ -6,7 +5,7 @@ abstract type PhyloBDPModel{T} end
 Duplication, loss and WGD model. This holds a dictionary for easy access of the
 nodes in the probabilistic graphical model and the leaf names.
 """
-struct DLWGD{T<:Real,V<:ModelNode{T}} <: PhyloBDPModel{T}
+struct DLWGD{T<:Real,V<:ModelNode{T}}
     nodes ::Dict{Int64,V}
     leaves::Dict{Int64,Symbol}
 end
@@ -15,7 +14,10 @@ Base.show(io::IO, d::DLWGD{T,V}) where {T,V} = write(io, "DLWGD{$T,$V}($(length(
 Base.length(d::DLWGD) = length(d.nodes)
 Base.getindex(d::DLWGD, i::Int64) = d.nodes[i]
 Base.getindex(d::DLWGD, i::Int64, s::Symbol) = d.nodes[i][s]
-ne(d::DLWGD) = 2*length(d.leaves) - 2  # number of edges ignoring WGDs
+
+# ne(d::DLWGD) = 2*length(d.leaves) - 2  # number of edges ignoring WGDs
+# XXX the above does not work when there are polytomies
+ne(d::DLWGD) = length(d) - nwgd(d) - 1
 
 function DLWGD(nw::String, df::DataFrame, λ=1., μ=1., η=0.9, nt::Type=Branch)
     @unpack t, l = readnw(nw)
