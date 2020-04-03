@@ -135,8 +135,10 @@ phylogeny.
     πq::V               = Beta()
     πK::W               = Geometric(0.5)
     πE::X               = nothing
+    equal::Bool         = false  # HACK for equal dup and loss rates, should get a dedicated prior in a better Beluga implementation
     Tl::Float64
     @assert isposdef(Ψ)
+    @assert !(equal && !isnothing(πE))
 end
 
 function logpdf(prior::IRRevJumpPrior, d::DLWGD{T}) where T<:Real
@@ -186,6 +188,7 @@ function Base.rand(prior::IRRevJumpPrior, d::DLWGD, k::Int64=-1)
     end
     X = rand(X₀)
     rates = exp.(rand(MvNormal(X, Σ), Beluga.ne(model)+1))
+
     setrates!(model, rates)
     (model=model, Σ=Σ, η=model[1,:η], rates=rates, wgds=wgds)
 end

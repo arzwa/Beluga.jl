@@ -437,12 +437,12 @@ function move_cr!(chain)
     return
 end
 
-function move_node!(chain, n, equal::Bool=false)
+function move_node!(chain, n)
     @unpack data, state, model, props, prior = chain
     v = n[:λ, :μ]
     prop = rand(props[n.i])
     w::Vector{Float64}, r::Float64 = prop(log.(v))
-    equal ? w[2] = w[1] : nothing
+    prior.equal ? w[2] = w[1] : nothing
     update!(n, (λ=exp(w[1]), μ=exp(w[2])))
     accept, ℓ, π = acceptreject(chain, ()->logpdf!(n, data), r)
     if accept
@@ -529,6 +529,7 @@ function move_wgdrates!(chain, prior, n)
     prop = rand(props[n.i][2:end])
     w::Vector{Float64}, r::Float64 = prop(v)
     n[:q] = w[1]
+    prior.equal ? w[3] = w[2] : nothing
     update!(child, (λ=exp(w[2]), μ=exp(w[3])))
     accept, ℓ, π = acceptreject(chain, ()->logpdf!(child, data), r)
     if accept
