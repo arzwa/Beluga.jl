@@ -1,5 +1,9 @@
 abstract type AbstractProfile{T} end
 
+# NOTE: april 6 2020: introduced site-patterns approach. Note that this is
+# incompatible with family-specific rates if there is no marginalization over
+# rate variation.
+
 """
     Profile{T<:Real}
 
@@ -8,6 +12,7 @@ applications (temporary storage fields) and parallel applications (using
 DArrays). See also `PArray`.
 """
 @with_kw mutable struct Profile{T<:Real} <: AbstractProfile{T}
+    n ::Int # number of times this profie appears in the data
     x ::Vector{Int64}
     xp::Vector{Int64} = deepcopy(x)
     L ::Matrix{T}
@@ -24,9 +29,12 @@ PArray() = distribute([Profile(nothing)])
 Base.show(io::IO, P::PArray{T}) where T = write(io, "PArray{$T}($(length(P)))")
 
 Profile(x::Nothing) = Profile(Int64[], Int64[], zeros(0,0), zeros(0,0))
-Profile(x::Vector{Int64}, n=length(x), m=maximum(x)+1) =
-    Profile(x=x, L=minfs(Float64,m,n))
+Profile(x::Vector{Int64}, n=1, l=length(x), m=maximum(x)+1) =
+    Profile(x=x, n=n, L=minfs(Float64,m,l))
 Profile(X::Matrix{Int64}) = distribute([Profile(X[:,i]) for i=1:size(X)[2]])
+# n is the vector of couts for the site patterns
+Profile(X::Matrix{Int64}, n::Vector{Int64}) =
+    distribute([Profile(X[:,i], n[i]) for i=1:length(n)])
 
 # NOTE: the length hack is quite ugly, maybe nicer to have a type for empty
 # (mock) profiles [for sampling from the prior alone in MCMC applications]
@@ -46,13 +54,13 @@ Assumes (of course) that the phylogenetic profiles are iid from the same DLWGD
 model.
 """
 logpdf!(d::DLWGD, p::PArray{T}) where T = length(p[1].x) == 0 ?
-    zero(T) : mapreduce((x)->logpdf!(x.Lp, d, x.xp), +, p)::T
+    zero(T) : mapreduce((x)->x.n*logpdf!(x.Lp, d, x.xp), +, p)::T
 
 logpdf!(n::ModelNode, p::PArray{T}) where T = length(p[1].x) == 0 ?
-    zero(T) : mapreduce((x)->logpdf!(x.Lp, n, x.xp), +, p)::T
+    zero(T) : mapreduce((x)->x.n*logpdf!(x.Lp, n, x.xp), +, p)::T
 
 logpdfroot(n::ModelNode, p::PArray{T}) where T = length(p[1].x) == 0 ?
-    zero(T) : mapreduce((x)->logpdfroot(x.Lp, n), +, p)::T
+    zero(T) : mapreduce((x)->x.n*logpdfroot(x.Lp, n), +, p)::T
 
 """
     gradient!(d::DLWGD, p::PArray{T})
@@ -61,10 +69,10 @@ Accumulate the gradient ∇ℓ(λ,μ,q,η|X) in parallel for the phylogenetic pr
 matrix `p`.
 """
 gradient(d::DLWGD, p::PArray{T}) where T =
-    mapreduce((x)->gradient(d, x.xp), +, p)::Vector{T}
+    mapreduce((x)->x.n .* gradient(d, x.xp), +, p)::Vector{T}
 
 gradient_cr(d::DLWGD, p::PArray{T}) where T =
-    mapreduce((x)->gradient_cr(d, x.xp), +, p)::Vector{T}
+    mapreduce((x)->x.n .* gradient_cr(d, x.xp), +, p)::Vector{T}
 
 # Efficient setting/resetting
 # copyto! approach is slightly faster, but not compatible with arrays of ≠ dims

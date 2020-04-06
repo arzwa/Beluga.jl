@@ -21,13 +21,13 @@ ne(d::DLWGD) = length(d) - nwgd(d) - 1
 
 function DLWGD(nw::String, df::DataFrame, λ=1., μ=1., η=0.9, nt::Type=Branch)
     @unpack t, l = readnw(nw)
-    M, m = profile(t, l, df)
+    data, m = profile(t, l, df)
     d = DLWGD(initmodel(t, l, η, λ, μ, max(3, m), nt)...)
     set!(d)
-    (model=d, data=Profile(M))
+    (model=d, data=data)
 end
 
-function DLWGD(nw::String, λ=1., μ=1., η=0.9, nt::Type=Branch)
+function DWGD(nw::String, λ=1., μ=1., η=0.9, nt::Type=Branch)
     # NOTE: model without data; m should be >= 3, otherwise WGD model breaks
     @unpack t, l = readnw(nw)
     d = DLWGD(initmodel(t, l, η, λ, μ, 3, nt)...)
@@ -38,13 +38,14 @@ end
 # compute extended phylogenetic profile (i.e. upper bound of number of
 # surviving lineages at internal nodes)
 function profile(t::TreeNode, l::Dict, df::DataFrame)
+    reduced = by(df, names(df), x->size(x)[1])  # counts site patterns
     nodes = postwalk(t)
-    M = zeros(Int64, size(df)[1], length(nodes))
+    M = zeros(Int64, size(reduced)[1], length(nodes))
     for n in nodes
         M[:,n.i] = isleaf(n) ?
-            df[:,Symbol(l[n.i])] : sum([M[:,c.i] for c in n.c])
+            reduced[:,Symbol(l[n.i])] : sum([M[:,c.i] for c in n.c])
     end
-    return permutedims(M), maximum(M)+1
+    return Profile(permutedims(M), reduced[!,:x1]), maximum(M)+1
 end
 
 """
