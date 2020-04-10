@@ -4,7 +4,7 @@ using Beluga
 Random.seed!(333)
 
 # setup
-datadir = "data"
+datadir = joinpath(@__DIR__, "data")
 df1 = DataFrame(:A=>[2,3],:B=>[2,5],:C=>[3,0],:D=>[4,1])
 df2 = DataFrame(:A=>rand(1:20, 1000), :B=>rand(1:20, 1000),
     :C=>rand(1:10, 1000), :D=>rand(1:10, 1000))

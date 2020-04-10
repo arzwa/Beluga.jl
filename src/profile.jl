@@ -28,7 +28,7 @@ const PArray{T} = DArray{Profile{T},1,Array{Profile{T},1}} where T<:Real
 PArray() = distribute([Profile(nothing)])
 Base.show(io::IO, P::PArray{T}) where T = write(io, "PArray{$T}($(length(P)))")
 
-Profile(x::Nothing) = Profile(Int64[], Int64[], zeros(0,0), zeros(0,0))
+Profile(x::Nothing) = Profile(1, Int64[], Int64[], zeros(0,0), zeros(0,0))
 Profile(x::Vector{Int64}, n=1, l=length(x), m=maximum(x)+1) =
     Profile(x=x, n=n, L=minfs(Float64,m,l))
 Profile(X::Matrix{Int64}) = distribute([Profile(X[:,i]) for i=1:size(X)[2]])

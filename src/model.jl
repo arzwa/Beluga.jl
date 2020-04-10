@@ -17,7 +17,7 @@ Base.getindex(d::DLWGD, i::Int64, s::Symbol) = d.nodes[i][s]
 
 # ne(d::DLWGD) = 2*length(d.leaves) - 2  # number of edges ignoring WGDs
 # XXX the above does not work when there are polytomies
-ne(d::DLWGD) = length(d) - nwgd(d) - 1
+ne(d::DLWGD) = length(d) - 2nwgd(d) - 1
 
 function DLWGD(nw::String, df::DataFrame, λ=1., μ=1., η=0.9, nt::Type=Branch)
     @unpack t, l = readnw(nw)
@@ -27,7 +27,7 @@ function DLWGD(nw::String, df::DataFrame, λ=1., μ=1., η=0.9, nt::Type=Branch)
     (model=d, data=data)
 end
 
-function DWGD(nw::String, λ=1., μ=1., η=0.9, nt::Type=Branch)
+function DLWGD(nw::String, λ=1., μ=1., η=0.9, nt::Type=Branch)
     # NOTE: model without data; m should be >= 3, otherwise WGD model breaks
     @unpack t, l = readnw(nw)
     d = DLWGD(initmodel(t, l, η, λ, μ, 3, nt)...)

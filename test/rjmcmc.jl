@@ -2,7 +2,7 @@
 Random.seed!(143)
 
 @testset "rjMCMC prior sampling, MWG" begin
-    nw = readline("data/plants1c.nw")
+    nw = readline(joinpath(@__DIR__, "data/plants1c.nw"))
     d, p = DLWGD(nw, 1., 1., 0.9)
     prior = IRRevJumpPrior(
         Ψ=[1 0.0 ; 0.0 1],
@@ -27,7 +27,7 @@ end
 Random.seed!(143)
 
 @testset "rjMCMC prior sampling AMM" begin
-    nw = readline("data/plants1c.nw")
+    nw = readline(joinpath(@__DIR__, "data/plants1c.nw"))
     d, p = DLWGD(nw, 2., 2., 0.9)
     prior = IRRevJumpPrior(
         Ψ=[1 0.0 ; 0.0 1],
