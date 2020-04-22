@@ -1,7 +1,7 @@
 name = "Beluga"
 uuid = "54089656-9653-11e9-3cd0-3b3de27a7aaa"
 authors = ["Arthur ZWAENEPOEL <arzwa@psb.ugent.be>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 AdaptiveMCMC = "7599756a-d2e4-11e9-0d0e-31645f1f853c"
