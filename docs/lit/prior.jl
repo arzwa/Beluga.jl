@@ -7,7 +7,7 @@
 # can also be quite complicated in phylogenetic applications, at least in my humble
 # opinion).
 using Distributions, Beluga, Plots, StatsPlots, LaTeXStrings, Random
-Random.seed!(190894)
+Random.seed!(230364)
 
 # Obtain the species tree
 nw = readline(joinpath(@__DIR__, "../../example/9dicots/9dicots.nw"))
@@ -42,7 +42,7 @@ chain = RevJumpChain(data=p, model=d, prior=prior, kernel=kernel)
 init!(chain)
 
 # and sample
-@time rjmcmc!(chain, 5000, trace=5, show=1000)
+@time rjmcmc!(chain, 10000, trace=5, show=1000)
 
 # Now plot some stuff
 p1 = bar(Beluga.freqmap(chain.trace[!,:k]), color=:white, title=L"k")

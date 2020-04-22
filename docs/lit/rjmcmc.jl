@@ -1,13 +1,13 @@
 # # WGD inference using reversible-jump MCMC and gene count data
 
+# !!! note
+#     Please note that all analyses below are on a small test data set and use short MCMC runs. This is of course not recommended in practice, but simply to make generating this page feasible in reasonable time.
+
 # Load Beluga and required packages:
 using Beluga, CSV, Distributions, Random
 Random.seed!(23031964)
 
-# Or, if you are running a julia session with multiple processes (when you started
-# julia with `-p` option, or manually added workers using `addprocs`, see
-# [julia docs](https://docs.julialang.org/en/v1/manual/parallel-computing/index.html#Parallel-Computing-1)),
-# run:
+# Or, if you are running a julia session with multiple processes (when you started julia with `-p` option, or manually added workers using `addprocs`, see [julia docs](https://docs.julialang.org/en/v1/manual/parallel-computing/index.html#Parallel-Computing-1)), run:
 
 # ```julia
 # using CSV, Distributions
@@ -19,10 +19,7 @@ nw = readline(joinpath(@__DIR__, "../../example/9dicots/9dicots.nw"))
 df = CSV.read(joinpath(@__DIR__, "../../example/9dicots/9dicots-f01-25.csv"))
 model, data = DLWGD(nw, df, 1.0, 1.2, 0.9)
 
-# `model` now refers to the duplication-loss and WGD model (with no WGDs for now),
-# `data` refers to the phylogenetic profile matrix. The model was initialized with
-# all duplication and loss rates set to 1 and 1.2 respectively. You can check
-# this easily:
+# `model` now refers to the duplication-loss and WGD model (with no WGDs for now), `data` refers to the phylogenetic profile matrix. The model was initialized with all duplication and loss rates set to 1 and 1.2 respectively. You can check this easily:
 getrates(model)
 
 # or to get the full parameter vector:
@@ -31,14 +28,9 @@ asvector(model)
 # Now you can easily compute log-likelihoods (and gradients thereof)
 logpdf!(model, data)
 
-# so we can do likelihood-based inference (either maximum-likelihood or Bayesian).
-# For the kind of problems tackled here, the only viable option however is
-# Bayesian inference.
+# so we can do likelihood-based inference (either maximum-likelihood or Bayesian). For the kind of problems tackled here, the only viable option however is Bayesian inference.
 
-# We proceed by specifying the hierarchical prior on the gene family evolutionary
-# process. There is no DSL available (à la Turing.jl, Mamba.jl, Soss.jl or Stan)
-# but we use a fairly flexible prior struct. Here is an exaple for the (recommended)
-# bivariate independent rates (IR) prior:
+# We proceed by specifying the hierarchical prior on the gene family evolutionary process. There is no DSL available (à la Turing.jl, Mamba.jl, Soss.jl or Stan) but we use a fairly flexible prior struct. Here is an exaple for the (recommended) bivariate independent rates (IR) prior:
 prior = IRRevJumpPrior(
     Ψ=[1 0. ; 0. 1],
     X₀=MvNormal([0., 0.], [1 0. ; 0. 1]),
@@ -55,28 +47,21 @@ prior = IRRevJumpPrior(
 # at the root. `Tl` is the tree length (and is used for the prior on the WGD
 # ages).
 
-# To sample across model-space (i.e. where we infer the number and locations of
-# WGDs), we need the reversible jump algorithm. There are several reversible-jump
-# kernels implemented. The simplest is the aptly named `SimpleKernel`, which
-# introduces new WGDs with a random retention rate drawn from a Beta distribution.
+# To sample across model-space (i.e. where we infer the number and locations of WGDs), we need the reversible jump algorithm. There are several reversible-jump kernels implemented. Each reversible jump kernel introduces a WGD with probability 1/2 (forward jump) or removes a WGD with probability 1/2 (reverse jump). The simplest is the aptly named `SimpleKernel`, which introduces new WGDs with a random retention rate drawn from a Beta distribution.
 kernel = SimpleKernel(qkernel=Beta(1,3))
 
-# We can then construct a chain
+# The differences between the kernels is the parameter updates that are applied during these jumps. Kernel 1 (`SimpleKernel`) only introduces/removes a WGD and does not modify the duplication and loss rates on the associated branch, kernel 2 (`DropKernel`) introduces/removes a WGD and concomitantly decreases/increases the duplication rate by a random amount and kernel 3 (`BranchKernel`) introduces/removes a WGD, decreases/increases the duplication rate and increases/decreases the loss rate (randomly). As, in contrast with ordinary Metropolis-Hastings MCMC proposals, tuning of the reversible-jump kernel is not possible automatically (or at least, I'm unsure how it should be done), it can be worthwhile to do some initial short pilot runs on a small data set to figure out a parameterization that results in a reasonably high jump probability (`pjmp` in the output). Usually, using the same distribution for the `qkernel` as the prior on `q` is a good idea.
+
+# We can now construct a chain object bundling everything
 chain = RevJumpChain(data=data, model=model, prior=prior, kernel=kernel)
 init!(chain)
 
 # and sample from it:
-rjmcmc!(chain, 1000, show=50)
+@time rjmcmc!(chain, 1000, show=50)
 
-# This will log a part of the trace to stdout every `show` iterations, so that
-# we're able to monitor a bit whether everything looks sensible. Of course in
-# reality you would sample way longer than `n=1000` iterations, but since this
-# page has to be generated in decent time using a single CPU I'll keep it to 1000
-# here.
+# This will log a part of the trace to stdout every `show` iterations, so that we're able to monitor a bit whether everything looks sensible. Of course in reality you would sample way longer than `n=1000` iterations, but since this page has to be generated in decent time using a single CPU I'll keep it to 1000 here.
 
-# Now the computer has done Bayesian inference, and we have to do our part. We
-# can analyze the trace (in `chain.trace`), write it to a file, compute statistics, etc.
-# Here are some trace plots:
+# Now the computer has done Bayesian inference, and we have to do our part. We can analyze the trace (in `chain.trace`), write it to a file, compute statistics, etc. Here are some trace plots:
 using Plots, DataFrames, LaTeXStrings
 burnin=100
 p1 = plot(chain.trace[burnin:end,:λ1], label=L"\lambda_1")
@@ -87,25 +72,20 @@ p3 = plot(chain.trace[!,:k], label=L"k")
 p4 = plot(chain.trace[!,:η1], label=L"\eta")
 plot(p1,p2,p3,p4, grid=false, layout=(2,2))
 
-# Clearly, we should sample way longer to get decent estimates for the duplication
-# rates (`λ`), loss rates (`μ`) and number of WGDs (`k`). Note how `η` is quite
-# well-sampled already.
+# Clearly, we should sample way longer to get decent estimates for the duplication rates (`λ`), loss rates (`μ`) and number of WGDs (`k`). Note how `η` is quite well-sampled already.
 
-# We can also check the effective sample size (ESS) of the model indicator
-# variable, for that we will use the method of Heck et al. (2019) implemented in
-# the module [`DiscreteMarkovFit.jl`](https://github.com/arzwa/DiscreteMarkovFit.jl):
+# We can also check the effective sample size (ESS) of the model indicator variable, for that we will use the method of Heck et al. (2019) implemented in the module [`DiscreteMarkovFit.jl`](https://github.com/arzwa/DiscreteMarkovFit.jl):
 using DiscreteMarkovFit
 
 # We'll discard a burnin of 100 iterations
 d = ObservedBirthDeathChain(Array(chain.trace[100:end,:k]))
 out = DiscreteMarkovFit.sample(d, 10000)
 
-# This shows the effective sample size for the number of WGDs and the associated
-# posterior probabilities. The maximum a posteriori (MAP) number of WGDs here is three.
-# When doing a serious analysis, one should aim for higher ESS values of course.
+# This shows the effective sample size for the number of WGDs and the associated posterior probabilities. The maximum a posteriori (MAP) number of WGDs here is three. When doing a serious analysis, one should aim for higher ESS values of course. Note that if one is interested in WGDs for a specific branch, it is also relevant to look at that variable, for instance for the poplar branch
+d = ObservedBirthDeathChain(Array(chain.trace[100:end,:k10]))
+out = DiscreteMarkovFit.sample(d, 10000)
 
-# We can also compute Bayes factors to get an idea of the number of WGDs for each
-# branch in the species tree.
+# We can also compute Bayes factors to get an idea of the number of WGDs for each branch in the species tree.
 bfs = bayesfactors(chain, burnin=100);
 
 # This suggests strong support for WGD in quinoa (`cqu`), for which we know
