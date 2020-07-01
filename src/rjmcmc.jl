@@ -1,5 +1,6 @@
 const State = Dict{Symbol,Union{Float64,Int64}}
 
+# TODO allow WGTs...
 
 # proposals
 abstract type Proposals end
@@ -71,18 +72,19 @@ branch.
 @with_kw mutable struct DropKernel <: RevJumpKernel
     qkernel ::Beta{Float64} = Beta(1,1)
     λkernel ::Exponential{Float64} = Exponential(0.1)
+    equal   ::Bool = false  # in case λ & μ are constrained to be equal
     accepted::Int64 = 0
 end
 
 function forward(kernel::DropKernel, λ::Float64, μ::Float64)
     q  = rand(kernel.qkernel)
-    θ  = log(λ) - rand(kernel.λkernel)
-    q, exp(θ), μ, logpdf(kernel.qkernel, q)
+    θ  = exp(log(λ) - rand(kernel.λkernel))
+    q, θ, kernel.equal ? θ : μ, logpdf(kernel.qkernel, q)
 end
 
 function reverse(kernel::DropKernel, λ::Float64, μ::Float64, q::Float64)
-    θ = log(λ) + rand(kernel.λkernel)
-    exp(θ), μ, logpdf(kernel.qkernel, q)
+    θ = exp(log(λ) + rand(kernel.λkernel))
+    θ, kernel.equal ? θ : μ, logpdf(kernel.qkernel, q)
 end
 
 """
