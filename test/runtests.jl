@@ -22,5 +22,5 @@ shouldbe3 = [-1296.1763022581217, -1408.4459849625102, -1172.356609929616,
     -1364.8837334043392]
 
 include("tests.jl")
-include("rjmcmc.jl")
+# include("rjmcmc.jl")
 # include("gradient.jl")
