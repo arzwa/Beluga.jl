@@ -84,8 +84,8 @@ function bayesfactors(trace::DataFrame, model::DLWGD, p)
     df = DataFrame()
     for (i,n) in sort(model.nodes)
         if isawgd(n); break; end
-        if !(Symbol("k$i") in names(trace)); continue; end
-        fmap = freqmap(trace[!,Symbol("k$i")])
+        if !("k$i" in names(trace)); continue; end
+        fmap = freqmap(trace[!,"k$i"])
         kmax = maximum(keys(fmap))
         te = parentdist(n, nonwgdparent(n.p))
         ps = [haskey(fmap, i) ? fmap[i] : 0. for i in 0:kmax]
